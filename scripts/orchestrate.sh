@@ -161,7 +161,7 @@ case "$command_name" in
     require_cmd checkov
 
     terraform fmt -check -recursive
-    terragrunt hclfmt --check
+    terragrunt hcl format --check
     ansible-lint ansible
     yamllint .
     shellcheck scripts/*.sh

@@ -23,11 +23,11 @@ help:
 
 fmt:
 	terraform fmt -recursive modules examples
-	terragrunt hclfmt
+	terragrunt hcl format
 
 fmt-check:
 	terraform fmt -check -recursive modules examples
-	terragrunt hclfmt --check
+	terragrunt hcl format --check
 
 lint:
 	@for module in modules/terraform/*; do \
