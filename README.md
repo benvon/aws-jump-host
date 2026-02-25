@@ -1,35 +1,45 @@
 # aws-jump-host
 
-Turn-key solution for deploying and managing private AWS jump hosts accessed through AWS Systems Manager Session Manager.
+Turn-key solution for deploying and managing private AWS jump hosts through AWS Session Manager.
 
-## Goals
+## What This Provides
 
-- No SSH ingress from the public internet.
-- No pre-provisioned SSH keys.
-- IMDSv2-only EC2 instances.
-- Least-privilege instance IAM role.
-- Session logging to CloudWatch.
-- Declarative infrastructure and host configuration.
+- Terraform modules for jump hosts, VPC endpoints, observability, and remote state bucket provisioning.
+- Terragrunt orchestration for multi-environment structures (`env/subenv/region`).
+- Ansible roles/playbooks for declarative host hardening and user provisioning over SSM.
+- Shell orchestration for `init|plan|apply|check|destroy` workflows.
+- CI workflows and local Make targets for validation parity.
 
-## Stack
+## Security Defaults
 
-- Terraform modules for AWS resources.
-- Terragrunt for multi-environment orchestration and remote state configuration.
-- Ansible for host hardening and user lifecycle.
-- Shell orchestration for end-to-end workflows.
+- IMDSv2-only EC2 metadata configuration.
+- No SSH ingress requirement.
+- No local password or SSH-key auth provisioning by default.
+- Least-privilege instance role for SSM agent functions.
+- Session logging dependencies provisioned in CloudWatch.
+- External IAM Identity Center controls integrated via deterministic host tags.
 
-## Repository Model
+## Quick References
 
-This repository is intentionally modular. It can be used as:
+- [Architecture](docs/architecture.md)
+- [Consumer Guide](docs/consumer-guide.md)
+- [Access Model](docs/access-model.md)
+- [Toolchain Policy](docs/toolchain.md)
 
-1. A standalone orchestration repo with provided `examples/live` references.
-2. A shared module/orchestration repo consumed by a separate environment-input repo.
+## Local Validation
 
-## Next Steps
+- `make fmt-check`
+- `make lint`
+- `make validate`
+- `make check`
 
-See:
+## Example Orchestration
 
-- `docs/architecture.md`
-- `docs/consumer-guide.md`
-- `docs/access-model.md`
-- `docs/toolchain.md`
+```bash
+./scripts/orchestrate.sh plan \
+  --live-dir ./examples/live \
+  --env dev \
+  --subenv east \
+  --region us-east-1 \
+  --users-vars ./ansible/vars-schema.example.yml
+```

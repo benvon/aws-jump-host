@@ -1,13 +1,43 @@
 # Access Model
 
-## Ownership Boundaries
+## Responsibility Split
 
-- IAM Identity Center groups and assignments are externally managed.
-- Session Manager account preferences are externally managed.
-- This repository emits deterministic tags and policy templates to integrate with those controls.
+External platform/IAM team owns:
 
-## Enforcement Goals
+- IAM Identity Center groups and assignments
+- Session Manager account-level preferences
+- Permission boundaries/organization guardrails
 
-- Host-level tags for access profile and run-as defaults.
-- Session logging requirements validated via preflight checks.
-- No direct mutation of centralized IAM Identity Center configuration.
+This repository owns:
+
+- Host tags consumed by access policies (`JumpHost`, `AccessProfile`, `RunAsDefaultUser`)
+- Host build/configuration baseline
+- Compliance preflight checks for required SSM settings
+- Example policy templates for central IAM teams
+
+## Tag Contract for IAM Conditions
+
+Terraform applies these key tags on jump instances:
+
+- `JumpHost=true`
+- `AccessProfile=<profile>`
+- `RunAsDefaultUser=<username>`
+
+Central IAM policies can require principals to match host `AccessProfile` and restrict sessions to tagged jump hosts only.
+
+## Session Manager Preconditions
+
+Before `plan`/`apply`, preflight validates:
+
+- `/ssm/sessionmanager/enableRunAs=true`
+- `/ssm/sessionmanager/enableCloudWatchLogging=true`
+- `/ssm/sessionmanager/cloudWatchLogGroupName` matches expected log group path
+- Optional: `runAsDefaultUser` match when explicitly required
+
+## Example IAM Policy Artifacts
+
+See `policy-templates/ssm-access-example.json` for a starter pattern that central IAM administrators can adapt.
+
+## Notes on Run As
+
+Run As restrictions are not configured by this repository. They are consumed and validated. To enforce principal-to-RunAs mapping, use centralized IAM policies and/or Session Manager preference constraints in the access-management account.

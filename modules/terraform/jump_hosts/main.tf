@@ -21,11 +21,11 @@ data "aws_subnet" "host" {
 locals {
   normalized_hosts = {
     for host_name, host in var.hosts : host_name => merge(host, {
-      security_group_ids = try(host.security_group_ids, [])
-      instance_type      = try(host.instance_type, "t3.micro")
+      security_group_ids  = try(host.security_group_ids, [])
+      instance_type       = try(host.instance_type, "t3.micro")
       root_volume_size_gb = try(host.root_volume_size_gb, 20)
       home_volume_size_gb = try(host.home_volume_size_gb, 20)
-      tags               = try(host.tags, {})
+      tags                = try(host.tags, {})
     })
   }
 

@@ -35,3 +35,12 @@ override.tf.json
 # Ignore CLI configuration files
 .terraformrc
 terraform.rc
+
+# Terragrunt cache
+.terragrunt-cache/
+
+# Generated validation artifacts
+.checkov.*
+
+# Generated Ansible inventory files
+ansible/inventory/generated-*.yml
