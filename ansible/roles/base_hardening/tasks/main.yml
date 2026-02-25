@@ -1,0 +1,29 @@
+---
+- name: Install baseline packages
+  ansible.builtin.package:
+    name:
+      - sudo
+      - util-linux
+      - shadow-utils
+    state: present
+
+- name: Ensure SSH hardening drop-in exists
+  ansible.builtin.copy:
+    dest: "{{ hardening_sshd_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      PasswordAuthentication no
+      ChallengeResponseAuthentication no
+      KbdInteractiveAuthentication no
+      PubkeyAuthentication no
+      PermitRootLogin no
+      PermitEmptyPasswords no
+      X11Forwarding no
+  notify: Restart sshd
+
+- name: Ensure sshd service is enabled
+  ansible.builtin.service:
+    name: "{{ sshd_service_name }}"
+    enabled: true

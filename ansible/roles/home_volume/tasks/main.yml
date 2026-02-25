@@ -1,0 +1,51 @@
+---
+- name: Probe candidate home volume devices
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ home_volume_device_candidates }}"
+  register: home_volume_candidate_stats
+
+- name: Select first existing device
+  ansible.builtin.set_fact:
+    home_volume_device: >-
+      {{
+        (home_volume_candidate_stats.results
+          | selectattr('stat.exists', 'equalto', true)
+          | map(attribute='item')
+          | list
+          | first) | default('')
+      }}
+
+- name: Fail when no home volume device was discovered
+  ansible.builtin.fail:
+    msg: "No home volume device found in candidates: {{ home_volume_device_candidates }}"
+  when: home_volume_device | length == 0
+
+- name: Detect filesystem type on home volume device
+  ansible.builtin.command:
+    cmd: "blkid -o value -s TYPE {{ home_volume_device }}"
+  register: home_volume_blkid
+  changed_when: false
+  failed_when: false
+
+- name: Create filesystem on unformatted home volume
+  community.general.filesystem:
+    fstype: "{{ home_volume_fstype }}"
+    dev: "{{ home_volume_device }}"
+  when: home_volume_blkid.rc != 0
+
+- name: Ensure home mount path exists
+  ansible.builtin.file:
+    path: "{{ home_volume_mount_path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Mount dedicated home volume
+  ansible.posix.mount:
+    path: "{{ home_volume_mount_path }}"
+    src: "{{ home_volume_device }}"
+    fstype: "{{ home_volume_fstype }}"
+    opts: defaults,nofail
+    state: mounted

@@ -1,0 +1,10 @@
+---
+users: []
+managed_user_uid_min: 1000
+managed_user_exclusions:
+  - ec2-user
+  - ssm-user
+  - nobody
+ops_sudo_commands:
+  - /usr/bin/systemctl
+  - /usr/bin/journalctl
