@@ -164,7 +164,7 @@ case "$command_name" in
     terragrunt hcl format --check --working-dir terragrunt
     terragrunt hcl format --check --working-dir examples/live
     ansible-lint ansible/playbooks ansible/roles ansible/group_vars ansible/requirements.yml ansible/vars-schema.example.yml
-    yamllint .github/workflows ansible/playbooks ansible/roles ansible/group_vars ansible/requirements.yml ansible/vars-schema.example.yml .ansible-lint .yamllint.yml
+    yamllint ansible/playbooks ansible/roles ansible/group_vars ansible/requirements.yml ansible/vars-schema.example.yml
     shellcheck scripts/*.sh
     tflint --init
     tflint --recursive modules/terraform

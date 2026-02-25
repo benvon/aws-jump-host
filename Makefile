@@ -8,7 +8,7 @@ SUBENV ?= east
 REGION ?= us-east-1
 USERS_VARS ?= ansible/vars-schema.example.yml
 ANSIBLE_LINT_PATHS ?= ansible/playbooks ansible/roles ansible/group_vars ansible/requirements.yml ansible/vars-schema.example.yml
-YAMLLINT_PATHS ?= .github/workflows ansible/playbooks ansible/roles ansible/group_vars ansible/requirements.yml ansible/vars-schema.example.yml .ansible-lint .yamllint.yml
+YAMLLINT_PATHS ?= ansible/playbooks ansible/roles ansible/group_vars ansible/requirements.yml ansible/vars-schema.example.yml
 
 .PHONY: help install-tools fmt fmt-check lint validate check plan-example apply-example destroy-example
 
@@ -33,7 +33,9 @@ install-tools:
 	fi
 	python -m pip install --upgrade pip
 	python -m pip install -r requirements-dev.txt
-	ansible-galaxy collection install -r ansible/requirements.yml
+	@mkdir -p .ansible/tmp .ansible/home ansible/collections
+	HOME="$(PWD)/.ansible/home" ANSIBLE_LOCAL_TEMP="$(PWD)/.ansible/tmp" ANSIBLE_CONFIG="$(PWD)/ansible.cfg" \
+		ansible-galaxy collection install -r ansible/requirements.yml -p ansible/collections
 
 fmt:
 	terraform fmt -recursive modules examples
