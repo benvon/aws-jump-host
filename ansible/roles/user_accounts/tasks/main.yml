@@ -8,7 +8,7 @@
       - item.sudo_profile in ['none', 'ops', 'admin']
       - item.state is not defined or item.state in ['present', 'absent']
     fail_msg: "Invalid user schema for {{ item | to_nice_json }}"
-  loop: "{{ users }}"
+  loop: "{{ user_accounts_users }}"
   loop_control:
     label: "{{ item.username | default('unknown') }}"
 
@@ -18,23 +18,23 @@
 
 - name: Build declared user list
   ansible.builtin.set_fact:
-    declared_users: "{{ users | map(attribute='username') | list }}"
+    user_accounts_declared_users: "{{ user_accounts_users | map(attribute='username') | list }}"
 
 - name: Initialize managed local user list
   ansible.builtin.set_fact:
-    managed_local_users: []
+    user_accounts_managed_local_users: []
 
 - name: Collect local users above managed UID threshold
   ansible.builtin.set_fact:
-    managed_local_users: "{{ managed_local_users + [item.key] }}"
+    user_accounts_managed_local_users: "{{ user_accounts_managed_local_users + [item.key] }}"
   loop: "{{ ansible_facts.getent_passwd | dict2items }}"
   when:
-    - (item.value[1] | int) >= managed_user_uid_min
-    - item.key not in managed_user_exclusions
+    - (item.value[1] | int) >= user_accounts_managed_user_uid_min
+    - item.key not in user_accounts_managed_user_exclusions
 
 - name: Determine undeclared users to disable
   ansible.builtin.set_fact:
-    users_to_disable: "{{ managed_local_users | difference(declared_users) }}"
+    user_accounts_users_to_disable: "{{ user_accounts_managed_local_users | difference(user_accounts_declared_users) }}"
 
 - name: Ensure sudo-capable group exists
   ansible.builtin.group:
@@ -57,7 +57,7 @@
     append: false
     password_lock: true
     state: "{{ item.state | default('present') }}"
-  loop: "{{ users }}"
+  loop: "{{ user_accounts_users }}"
   loop_control:
     label: "{{ item.username }}"
 
@@ -69,7 +69,7 @@
     group: root
     mode: "0440"
     validate: "/usr/sbin/visudo -cf %s"
-  loop: "{{ users }}"
+  loop: "{{ user_accounts_users }}"
   loop_control:
     label: "{{ item.username }}"
   when:
@@ -80,7 +80,7 @@
   ansible.builtin.file:
     path: "/etc/sudoers.d/jump-host-{{ item.username }}"
     state: absent
-  loop: "{{ users }}"
+  loop: "{{ user_accounts_users }}"
   loop_control:
     label: "{{ item.username }}"
   when:
@@ -95,10 +95,10 @@
     expires: 1
     groups: ""
     append: false
-  loop: "{{ users_to_disable }}"
+  loop: "{{ user_accounts_users_to_disable }}"
 
 - name: Remove sudoers for disabled users
   ansible.builtin.file:
     path: "/etc/sudoers.d/jump-host-{{ item }}"
     state: absent
-  loop: "{{ users_to_disable }}"
+  loop: "{{ user_accounts_users_to_disable }}"

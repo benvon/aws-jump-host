@@ -9,7 +9,7 @@
 
 - name: Ensure SSH hardening drop-in exists
   ansible.builtin.copy:
-    dest: "{{ hardening_sshd_config_path }}"
+    dest: "{{ base_hardening_sshd_config_path }}"
     owner: root
     group: root
     mode: "0644"
@@ -25,5 +25,5 @@
 
 - name: Ensure sshd service is enabled
   ansible.builtin.service:
-    name: "{{ sshd_service_name }}"
+    name: "{{ base_hardening_sshd_service_name }}"
     enabled: true

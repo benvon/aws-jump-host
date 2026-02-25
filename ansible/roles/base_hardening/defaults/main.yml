@@ -1,3 +1,3 @@
 ---
-sshd_service_name: sshd
-hardening_sshd_config_path: /etc/ssh/sshd_config.d/99-jump-host-hardening.conf
+base_hardening_sshd_service_name: sshd
+base_hardening_sshd_config_path: /etc/ssh/sshd_config.d/99-jump-host-hardening.conf

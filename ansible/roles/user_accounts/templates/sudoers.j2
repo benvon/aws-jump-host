@@ -1,5 +1,5 @@
 {% if item.sudo_profile == 'admin' -%}
 {{ item.username }} ALL=(ALL) NOPASSWD:ALL
 {% elif item.sudo_profile == 'ops' -%}
-{{ item.username }} ALL=(ALL) NOPASSWD:{{ ops_sudo_commands | join(',') }}
+{{ item.username }} ALL=(ALL) NOPASSWD:{{ user_accounts_ops_sudo_commands | join(',') }}
 {% endif -%}

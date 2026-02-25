@@ -1,5 +1,8 @@
 exclude_paths:
   - .github/
   - examples/
+mock_modules:
+  - community.general.filesystem
+  - ansible.posix.mount
 skip_list:
   - fqcn-builtins

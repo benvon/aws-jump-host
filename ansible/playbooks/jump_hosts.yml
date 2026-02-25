@@ -11,3 +11,8 @@
     - role: home_volume
     - role: base_hardening
     - role: user_accounts
+      vars:
+        user_accounts_users: "{{ users | default([]) }}"
+        user_accounts_managed_user_uid_min: "{{ managed_user_uid_min | default(1000) }}"
+        user_accounts_managed_user_exclusions: "{{ managed_user_exclusions | default(['ec2-user', 'ssm-user', 'nobody']) }}"
+        user_accounts_ops_sudo_commands: "{{ ops_sudo_commands | default(['/usr/bin/systemctl', '/usr/bin/journalctl']) }}"

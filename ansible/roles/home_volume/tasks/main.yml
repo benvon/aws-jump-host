@@ -29,9 +29,9 @@
   failed_when: false
 
 - name: Create filesystem on unformatted home volume
-  community.general.filesystem:
-    fstype: "{{ home_volume_fstype }}"
-    dev: "{{ home_volume_device }}"
+  ansible.builtin.command:
+    cmd: "mkfs -t {{ home_volume_fstype }} {{ home_volume_device }}"
+  changed_when: true
   when: home_volume_blkid.rc != 0
 
 - name: Ensure home mount path exists
@@ -42,10 +42,23 @@
     group: root
     mode: "0755"
 
-- name: Mount dedicated home volume
-  ansible.posix.mount:
-    path: "{{ home_volume_mount_path }}"
-    src: "{{ home_volume_device }}"
-    fstype: "{{ home_volume_fstype }}"
-    opts: defaults,nofail
-    state: mounted
+- name: Check whether home mount path is already mounted
+  ansible.builtin.command:
+    cmd: "mountpoint -q {{ home_volume_mount_path }}"
+  register: home_volume_mountpoint
+  changed_when: false
+  failed_when: false
+
+- name: Ensure home volume fstab entry exists
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: "^{{ home_volume_device | regex_escape }}\\s+{{ home_volume_mount_path | regex_escape }}\\s+"
+    line: "{{ home_volume_device }} {{ home_volume_mount_path }} {{ home_volume_fstype }} defaults,nofail 0 2"
+    create: false
+    state: present
+
+- name: Mount dedicated home volume # noqa: command-instead-of-module
+  ansible.builtin.command:
+    cmd: "mount {{ home_volume_mount_path }}"
+  when: home_volume_mountpoint.rc != 0
+  changed_when: true
