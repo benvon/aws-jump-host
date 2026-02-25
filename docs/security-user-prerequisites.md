@@ -1,42 +1,25 @@
-# IAM Role Prerequisites for `aws ssm start-session`
+# IAM Prerequisites for `aws ssm start-session`
 
 ## Purpose
 
-This is the handoff document for AWS Security/IAM and Linux user provisioning teams. It defines the assumptions and prerequisites required for an IAM role to successfully execute `aws ssm start-session` to these jump hosts.
-
-## Platform Assumptions
-
-1. Jump host Linux users are provisioned by this platform's Ansible workflow (`./scripts/orchestrate.sh configure ...` or `apply`).
-2. Jump hosts are tagged by Terraform with:
-   - `JumpHost=true`
-   - `AccessProfile=<profile>`
-3. Session access enforcement is external (IAM Identity Center + IAM policy conditions).
-
-## Success Criteria
-
-An operator assuming an approved IAM role can run:
+This document is for AWS Security/IAM teams only. It defines what must exist so an IAM role can successfully run:
 
 ```bash
 aws ssm start-session --target <instance-id>
 ```
 
-and:
+## Boundary
 
-1. Session opens only to authorized jump hosts.
-2. Session runs under the intended OS user model configured by your org.
-3. Session activity is logged to the expected CloudWatch log group.
+This platform already handles:
 
-## Prerequisites Checklist (Security/IAM)
+- target instance SSM readiness and connectivity prerequisites
+- Linux user provisioning on jump hosts
 
-1. IAM Identity Center assignment exists for the operator role.
-2. Role policy allows Session Manager actions on approved targets.
-3. ABAC conditions are enforced using jump host tags and principal attributes.
-4. Session Manager account settings are configured (Run As + CloudWatch logging).
-5. Required private connectivity to SSM/Logs/KMS APIs is available.
+Security/IAM teams are responsible for identity, IAM authorization, and Session Manager account settings.
 
-## 1) IAM Role Policy Prerequisites
+## Required IAM Role Permissions
 
-The IAM role used by operators must allow:
+The operator role must allow:
 
 - `ssm:StartSession`
 - `ssm:ResumeSession`
@@ -46,91 +29,67 @@ The IAM role used by operators must allow:
 - `ssm:DescribeInstanceInformation`
 - `ec2:DescribeInstances`
 
-Use the provided starter template and adapt it centrally:
+Starter template in this repo:
 
 - `policy-templates/ssm-access-example.json`
 
-### Required ABAC Conditions
+## Required Access Scoping (ABAC)
 
-Restrict start session to jump hosts and approved access profile matches:
+The role should be scoped to jump hosts using instance tags:
 
 - `ssm:resourceTag/JumpHost == "true"`
-- `ssm:resourceTag/AccessProfile == ${aws:PrincipalTag/AccessProfile}` (or equivalent central mapping)
+- `ssm:resourceTag/AccessProfile == ${aws:PrincipalTag/AccessProfile}`
 
-## 2) Session Manager Account Settings Prerequisites
+This requires the principal to carry an `AccessProfile` tag (role tag or session tag, per your federation model).
 
-These service settings must be configured externally per account/region:
+## Required IAM-to-Linux User Mapping
+
+If principal-to-Linux-user mapping is required, configure it with IAM principal tag:
+
+- `SSMSessionRunAs=<linux_username>`
+
+Session Manager uses `SSMSessionRunAs` to determine the OS user for that principal when Run As is enabled.
+
+### Provisioning model for security team
+
+For each operator role, set both tags:
+
+1. `AccessProfile=<profile>`
+2. `SSMSessionRunAs=<linux_username>`
+
+Example mapping table:
+
+- `Role: JumpOps-ReadWrite`, `AccessProfile: ops`, `SSMSessionRunAs: jumpops`
+- `Role: JumpAudit-ReadOnly`, `AccessProfile: audit`, `SSMSessionRunAs: jumpaudit`
+
+Notes:
+
+- `SSMSessionRunAs` value must match an existing Linux user on the host.
+- Linux users are provisioned by this platform's Ansible workflow.
+
+## Required Session Manager Service Settings
+
+Per account and region:
 
 - `/ssm/sessionmanager/enableRunAs = true`
 - `/ssm/sessionmanager/enableCloudWatchLogging = true`
 - `/ssm/sessionmanager/cloudWatchLogGroupName = /aws/ssm/jump-host/<env>/<subenv>/<region>`
 
-This repo validates these settings via:
+This repo validates these settings with:
 
 ```bash
 scripts/preflight_ssm_compliance.sh --region <region> --expected-log-group <name>
 ```
 
-## 3) Target Instance Prerequisites
+## Security Team Validation Checklist
 
-The target EC2 instance must be:
+1. IAM role has required SSM/EC2 actions.
+2. IAM role has `AccessProfile` tag and `SSMSessionRunAs` tag.
+3. ABAC conditions restrict access to tagged jump hosts.
+4. Session Manager service settings are configured for the target region/account.
+5. Test `start-session` as an allowed role and a denied role.
 
-1. Managed by SSM (online as a managed instance).
-2. Reachable to SSM control/data channels (via VPC endpoints or approved egress).
-3. Tagged for ABAC enforcement (`JumpHost`, `AccessProfile`).
+## AWS References
 
-Private endpoint set required for isolated subnets:
-
-- `ssm`
-- `ssmmessages`
-- `ec2messages`
-- `logs`
-- `kms` (if needed for encryption workflows)
-
-## 4) Linux User Provisioning Prerequisites
-
-Security/User provisioning teams must provide authoritative user declarations (external vars file) using:
-
-- `ansible/vars-schema.example.yml`
-
-Required user fields:
-
-- `username`
-- `groups`
-- `sudo_profile` (`none|ops|admin`)
-
-Optional:
-
-- `state`
-- `shell`
-- `home`
-
-Platform behavior:
-
-- Managed users are reconciled authoritatively.
-- Undeclared managed users are disabled/removed from groups.
-- Passwords are locked; SSH keys are not provisioned by this platform.
-
-## 5) Run As Model Clarification
-
-This repository does **not** map IAM principals to specific Linux usernames. That mapping/enforcement is external.
-
-To avoid session failures and unexpected identity behavior, Security/IAM must ensure the organization's Session Manager Run As policy is compatible with users provisioned by this platform.
-
-## 6) Handoff Deliverables Required From Security/User Teams
-
-Provide to platform operators:
-
-1. AccessProfile taxonomy and principal mapping rules.
-2. Confirmation that Session Manager service settings are configured in each target account/region.
-3. Role/policy artifacts used for `start-session` authorization.
-4. Approved location and ownership model for authoritative user vars.
-5. Logging/KMS access model for session log consumers.
-
-## 7) Pre-Go-Live Validation
-
-1. Run preflight check in each target region/account.
-2. Verify authorized role can start session to allowed hosts.
-3. Verify unauthorized role is denied by ABAC conditions.
-4. Verify sessions land in the expected CloudWatch log group.
-5. Verify configured Linux users are present and usable per org Run As policy.
+- Session Manager Run As behavior and `SSMSessionRunAs`: https://docs.aws.amazon.com/systems-manager/latest/userguide/session-preferences-run-as.html
+- Session Manager permissions and examples: https://docs.aws.amazon.com/systems-manager/latest/userguide/getting-started-restrict-access-examples.html
