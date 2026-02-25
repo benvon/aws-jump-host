@@ -28,12 +28,23 @@
   changed_when: false
   failed_when: false
 
+- name: Check for existing home volume format marker
+  ansible.builtin.stat:
+    path: "/var/lib/home_volume/marker_{{ home_volume_device | regex_replace('[^A-Za-z0-9]', '_') }}"
+  register: home_volume_format_marker
+
 - name: Create filesystem on unformatted home volume
   ansible.builtin.command:
     cmd: "mkfs -t {{ home_volume_fstype }} {{ home_volume_device }}"
   changed_when: true
-  when: home_volume_blkid.rc != 0
+  when: home_volume_blkid.rc != 0 and not (home_volume_format_marker.stat.exists | default(false))
 
+- name: Create home volume format marker
+  ansible.builtin.file:
+    path: "/var/lib/home_volume/marker_{{ home_volume_device | regex_replace('[^A-Za-z0-9]', '_') }}"
+    state: touch
+    mode: "0600"
+  when: home_volume_blkid.rc != 0 and not (home_volume_format_marker.stat.exists | default(false))
 - name: Ensure home mount path exists
   ansible.builtin.file:
     path: "{{ home_volume_mount_path }}"
