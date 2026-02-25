@@ -5,7 +5,7 @@ usage() {
   cat <<USAGE
 Usage: $0 --terragrunt-dir <path> --output <path> [--group <name>]
 
-Renders an Ansible inventory from terragrunt output `hosts`.
+Renders an Ansible inventory from terragrunt output "hosts".
 USAGE
 }
 

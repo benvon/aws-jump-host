@@ -71,7 +71,7 @@ validate: install-tools
 	ansible-playbook -i ansible/inventory/hosts.yml ansible/playbooks/decommission.yml --syntax-check
 
 check: install-tools fmt-check lint validate
-	@if [[ "${SKIP_PREFLIGHT:-false}" == "true" ]]; then \
+	@if [[ "$${SKIP_PREFLIGHT:-false}" == "true" ]]; then \
 		echo "Skipping AWS SSM preflight (SKIP_PREFLIGHT=true)."; \
 	else \
 		scripts/preflight_ssm_compliance.sh \
