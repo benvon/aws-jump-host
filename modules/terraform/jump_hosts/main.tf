@@ -56,7 +56,10 @@ resource "aws_iam_role" "instance" {
   tags               = var.common_tags
 }
 
+# tfsec:ignore:aws-iam-no-policy-wildcards ssmmessages and ec2messages do not support resource-level permissions; AWS Service Authorization Reference requires "Resource": "*".
 data "aws_iam_policy_document" "ssm_core" {
+  #checkov:skip=CKV_AWS_355:ssmmessages and ec2messages do not support resource-level permissions; AWS requires "Resource": "*" per Service Authorization Reference.
+  #checkov:skip=CKV_AWS_356:ssmmessages and ec2messages do not support resource-level permissions; AWS requires "Resource": "*" per Service Authorization Reference.
   statement {
     sid = "SsmManagedInstanceUpdate"
 
@@ -67,6 +70,10 @@ data "aws_iam_policy_document" "ssm_core" {
     ]
   }
 
+  # ssmmessages and ec2messages do not support resource-level permissions.
+  # AWS Service Authorization Reference requires "Resource": "*" for both services.
+  # See: https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonmessagegatewayservice.html
+  # See: https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonmessagedeliveryservice.html
   statement {
     sid = "SsmMessageChannels"
 
@@ -77,10 +84,7 @@ data "aws_iam_policy_document" "ssm_core" {
       "ssmmessages:OpenDataChannel",
     ]
 
-    resources = [
-      "arn:${data.aws_partition.current.partition}:ssmmessages:*:*:control-channel/*",
-      "arn:${data.aws_partition.current.partition}:ssmmessages:*:*:data-channel/*",
-    ]
+    resources = ["*"]
   }
 
   statement {
@@ -95,11 +99,7 @@ data "aws_iam_policy_document" "ssm_core" {
       "ec2messages:SendReply"
     ]
 
-    resources = [
-      "arn:${data.aws_partition.current.partition}:ec2messages:*:*:endpoint/*",
-      "arn:${data.aws_partition.current.partition}:ec2messages:*:*:message/*",
-      "arn:${data.aws_partition.current.partition}:ec2messages:*:*:queue/*",
-    ]
+    resources = ["*"]
   }
 }
 
