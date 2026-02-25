@@ -1,5 +1,6 @@
 # Local .terraform directories
 .terraform/
+.terraform.lock.hcl
 
 # .tfstate files
 *.tfstate
@@ -48,3 +49,4 @@ ansible/inventory/generated-*.yml
 # Local Ansible runtime/cache artifacts
 .ansible/
 ansible/collections/ansible_collections/
+
