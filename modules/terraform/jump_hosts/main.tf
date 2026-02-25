@@ -96,6 +96,7 @@ resource "aws_security_group" "default" {
   vpc_id      = each.value.vpc_id
 
   egress {
+    description = "Allow HTTPS egress for SSM and AWS API access"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
@@ -116,6 +117,8 @@ resource "aws_instance" "host" {
   vpc_security_group_ids      = length(each.value.security_group_ids) > 0 ? each.value.security_group_ids : [aws_security_group.default[each.key].id]
   iam_instance_profile        = aws_iam_instance_profile.instance.name
   associate_public_ip_address = false
+  monitoring                  = true
+  ebs_optimized               = true
 
   root_block_device {
     volume_size = each.value.root_volume_size_gb

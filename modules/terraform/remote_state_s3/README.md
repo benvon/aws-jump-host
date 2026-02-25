@@ -23,4 +23,5 @@ Creates an encrypted, versioned S3 bucket for Terraform state and enables server
 ## Notes
 
 - The dedicated access-log bucket is intentionally not itself access-logged to avoid recursive logging chains.
+- The dedicated access-log bucket uses AWS-managed KMS (`aws/s3`) encryption by default.
 - This repository intentionally uses an S3-only backend posture (no DynamoDB locking), which means concurrent state operations must be controlled operationally.

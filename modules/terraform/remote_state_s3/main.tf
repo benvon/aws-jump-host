@@ -16,10 +16,12 @@ locals {
   effective_access_log_prefix      = trim(var.access_log_prefix, "/")
 }
 
-#checkov:skip=CKV_AWS_18:This bucket is the dedicated destination for S3 access logs. Logging it would cause recursive log chains.
 resource "aws_s3_bucket" "access_logs" { #tfsec:ignore:aws-s3-enable-bucket-logging This bucket is the dedicated destination for S3 access logs. Logging it would cause recursive log chains.
   count = var.create_access_log_bucket ? 1 : 0
 
+  #checkov:skip=CKV_AWS_18:This bucket is the dedicated destination for S3 access logs. Logging it would cause recursive log chains.
+  #checkov:skip=CKV2_AWS_62:S3 event notifications are intentionally not configured for state/log buckets in this module.
+  #checkov:skip=CKV_AWS_144:Cross-region replication is intentionally left to higher-level DR policies.
   bucket = local.effective_access_log_bucket_name
   tags   = var.tags
 }
@@ -52,8 +54,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "access_logs" {
 
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm     = var.kms_key_arn == null ? "AES256" : "aws:kms"
-      kms_master_key_id = var.kms_key_arn
+      sse_algorithm = "aws:kms"
     }
     bucket_key_enabled = true
   }
@@ -70,6 +71,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "access_logs" {
 
     expiration {
       days = var.access_log_retention_days
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
     }
   }
 }
@@ -137,6 +142,8 @@ resource "aws_s3_bucket_policy" "access_logs" {
 }
 
 resource "aws_s3_bucket" "state" {
+  #checkov:skip=CKV2_AWS_62:S3 event notifications are intentionally not configured for state/log buckets in this module.
+  #checkov:skip=CKV_AWS_144:Cross-region replication is intentionally left to higher-level DR policies.
   bucket        = var.state_bucket_name
   force_destroy = var.force_destroy
   tags          = var.tags
@@ -168,6 +175,19 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "state" {
       kms_master_key_id = var.kms_key_arn
     }
     bucket_key_enabled = true
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "state" {
+  bucket = aws_s3_bucket.state.id
+
+  rule {
+    id     = "abort-incomplete-multipart-uploads"
+    status = "Enabled"
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
   }
 }
 
