@@ -9,6 +9,7 @@ REGION ?= us-east-1
 USERS_VARS ?= ansible/vars-schema.example.yml
 ANSIBLE_LINT_PATHS ?= ansible/playbooks ansible/roles ansible/group_vars ansible/requirements.yml ansible/vars-schema.example.yml
 YAMLLINT_PATHS ?= ansible/playbooks ansible/roles ansible/group_vars ansible/requirements.yml ansible/vars-schema.example.yml
+TG_DOWNLOAD_DIR ?= $(abspath .cache/terragrunt)
 
 .PHONY: help install-tools fmt fmt-check lint validate check plan-example apply-example destroy-example
 
@@ -33,19 +34,19 @@ install-tools:
 	fi
 	python -m pip install --upgrade pip
 	python -m pip install -r requirements-dev.txt
-	@mkdir -p .ansible/tmp .ansible/home ansible/collections
+	@mkdir -p .ansible/tmp .ansible/home ansible/collections "$(TG_DOWNLOAD_DIR)"
 	HOME="$(PWD)/.ansible/home" ANSIBLE_LOCAL_TEMP="$(PWD)/.ansible/tmp" ANSIBLE_CONFIG="$(PWD)/ansible.cfg" \
 		ansible-galaxy collection install -r ansible/requirements.yml -p ansible/collections
 
 fmt:
 	terraform fmt -recursive modules examples
-	terragrunt hcl format --working-dir terragrunt
-	terragrunt hcl format --working-dir examples/live
+	terragrunt hcl format --working-dir terragrunt --exclude-dir .terragrunt-cache --exclude-dir .terraform
+	terragrunt hcl format --working-dir examples/live --exclude-dir .terragrunt-cache --exclude-dir .terraform
 
 fmt-check:
 	terraform fmt -check -recursive modules examples
-	terragrunt hcl format --check --working-dir terragrunt
-	terragrunt hcl format --check --working-dir examples/live
+	terragrunt hcl format --check --working-dir terragrunt --exclude-dir .terragrunt-cache --exclude-dir .terraform
+	terragrunt hcl format --check --working-dir examples/live --exclude-dir .terragrunt-cache --exclude-dir .terraform
 
 lint: install-tools
 	tflint --init
@@ -65,9 +66,9 @@ validate: install-tools
 		terraform -chdir="$$module" init -backend=false -input=false -no-color > /dev/null; \
 		terraform -chdir="$$module" validate; \
 	done
-	@for stack in $$(find examples/live -type f -name terragrunt.hcl -exec dirname {} \; | sort); do \
-		echo "terragrunt validate-inputs $$stack"; \
-		terragrunt -chdir="$$stack" validate-inputs; \
+	@for stack in $$(find examples/live -type d -name .terragrunt-cache -prune -o -type d -name .terraform -prune -o -type f -name terragrunt.hcl -exec dirname {} \; | sort); do \
+		echo "terragrunt hcl validate --inputs --working-dir $$stack"; \
+		TG_DOWNLOAD_DIR="$(TG_DOWNLOAD_DIR)" terragrunt hcl validate --inputs --working-dir "$$stack"; \
 	done
 	ansible-playbook -i ansible/inventory/hosts.yml ansible/playbooks/jump_hosts.yml --syntax-check
 	ansible-playbook -i ansible/inventory/hosts.yml ansible/playbooks/decommission.yml --syntax-check

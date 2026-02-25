@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+TG_DOWNLOAD_DIR="${TG_DOWNLOAD_DIR:-${REPO_ROOT}/.cache/terragrunt}"
+
 usage() {
   cat <<USAGE
 Usage:
@@ -22,7 +26,7 @@ require_cmd() {
 run_tg() {
   local stack_dir="$1"
   shift
-  terragrunt -chdir="$stack_dir" "$@"
+  TG_DOWNLOAD_DIR="$TG_DOWNLOAD_DIR" terragrunt --working-dir "$stack_dir" "$@"
 }
 
 if [[ $# -lt 1 ]]; then
@@ -104,6 +108,7 @@ for dir in "$region_dir" "$bootstrap_dir" "$observability_dir" "$endpoints_dir" 
 done
 
 require_cmd terragrunt
+mkdir -p "$TG_DOWNLOAD_DIR"
 
 run_preflight() {
   if [[ "${SKIP_PREFLIGHT:-false}" == "true" ]]; then
@@ -161,8 +166,8 @@ case "$command_name" in
     require_cmd checkov
 
     terraform fmt -check -recursive modules examples
-    terragrunt hcl format --check --working-dir terragrunt
-    terragrunt hcl format --check --working-dir examples/live
+    terragrunt hcl format --check --working-dir terragrunt --exclude-dir .terragrunt-cache --exclude-dir .terraform
+    terragrunt hcl format --check --working-dir examples/live --exclude-dir .terragrunt-cache --exclude-dir .terraform
     ansible-lint ansible/playbooks ansible/roles ansible/group_vars ansible/requirements.yml ansible/vars-schema.example.yml
     yamllint ansible/playbooks ansible/roles ansible/group_vars ansible/requirements.yml ansible/vars-schema.example.yml
     shellcheck scripts/*.sh

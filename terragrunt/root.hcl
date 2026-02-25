@@ -22,8 +22,8 @@ locals {
 }
 
 remote_state {
-  backend = "s3"
-  disable = local.is_bootstrap
+  backend      = "s3"
+  disable_init = local.is_bootstrap
 
   generate = {
     path      = "backend.tf"
