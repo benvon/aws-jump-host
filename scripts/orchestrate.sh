@@ -106,6 +106,11 @@ done
 require_cmd terragrunt
 
 run_preflight() {
+  if [[ "${SKIP_PREFLIGHT:-false}" == "true" ]]; then
+    echo "Skipping SSM preflight checks (SKIP_PREFLIGHT=true)."
+    return 0
+  fi
+
   local cmd=(scripts/preflight_ssm_compliance.sh --region "$aws_region" --expected-log-group "$expected_log_group")
   if [[ -n "$expected_run_as_user" ]]; then
     cmd+=(--expected-run-as-user "$expected_run_as_user")
@@ -152,6 +157,8 @@ case "$command_name" in
     require_cmd yamllint
     require_cmd shellcheck
     require_cmd tflint
+    require_cmd tfsec
+    require_cmd checkov
 
     terraform fmt -check -recursive
     terragrunt hclfmt --check
@@ -159,6 +166,8 @@ case "$command_name" in
     yamllint .
     shellcheck scripts/*.sh
     tflint --recursive modules/terraform
+    tfsec modules/terraform
+    checkov -d modules/terraform
 
     run_preflight
     ;;
