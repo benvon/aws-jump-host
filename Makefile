@@ -11,7 +11,7 @@ ANSIBLE_LINT_PATHS ?= ansible/playbooks ansible/roles ansible/group_vars ansible
 YAMLLINT_PATHS ?= ansible/playbooks ansible/roles ansible/group_vars ansible/requirements.yml ansible/vars-schema.example.yml
 TG_DOWNLOAD_DIR ?= $(abspath .cache/terragrunt)
 
-.PHONY: help install-tools fmt fmt-check lint validate check plan-example apply-example destroy-example
+.PHONY: help install-tools fmt fmt-check lint validate check plan-example apply-example configure-example destroy-example
 
 help:
 	@echo "Targets:"
@@ -23,6 +23,7 @@ help:
 	@echo "  check         - Run fmt-check + lint + validate (+ optional preflight)"
 	@echo "  plan-example  - Run orchestrator plan against example live config"
 	@echo "  apply-example - Run orchestrator apply against example live config"
+	@echo "  configure-example - Run Ansible-only host configuration against example live config"
 	@echo "  destroy-example - Run orchestrator destroy against example live config"
 
 install-tools:
@@ -87,6 +88,9 @@ plan-example:
 
 apply-example:
 	./scripts/orchestrate.sh apply --live-dir "$(LIVE_DIR)" --env "$(ENV)" --subenv "$(SUBENV)" --region "$(REGION)" --users-vars "$(USERS_VARS)"
+
+configure-example:
+	./scripts/orchestrate.sh configure --live-dir "$(LIVE_DIR)" --env "$(ENV)" --subenv "$(SUBENV)" --region "$(REGION)" --users-vars "$(USERS_VARS)"
 
 destroy-example:
 	./scripts/orchestrate.sh destroy --live-dir "$(LIVE_DIR)" --env "$(ENV)" --subenv "$(SUBENV)" --region "$(REGION)" --users-vars "$(USERS_VARS)"

@@ -30,6 +30,10 @@ From this repository root:
 2. `./scripts/orchestrate.sh plan --live-dir ...`
 3. `./scripts/orchestrate.sh apply --live-dir ...`
 
+For host configuration changes without Terraform execution (for example user add/remove only):
+
+- `./scripts/orchestrate.sh configure --live-dir ...`
+
 For teardown:
 
 - `./scripts/orchestrate.sh destroy --live-dir ...`

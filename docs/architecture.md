@@ -44,7 +44,7 @@ The resulting platform provisions private jump hosts reachable through AWS Sessi
 
 ### Shell orchestration
 
-- `scripts/orchestrate.sh` orchestrates `init|plan|apply|check|destroy`.
+- `scripts/orchestrate.sh` orchestrates `init|plan|apply|configure|check|destroy`.
 - `scripts/preflight_ssm_compliance.sh` validates required external Session Manager service settings.
 - `scripts/render_inventory.sh` renders static inventory from Terragrunt outputs for Ansible over SSM.
 
@@ -54,7 +54,7 @@ The resulting platform provisions private jump hosts reachable through AWS Sessi
 2. Terraform outputs host metadata map.
 3. Inventory renderer converts outputs to Ansible inventory keyed by EC2 instance ID.
 4. Ansible connects via `aws_ssm` and converges host state.
-5. Preflight checks gate plan/apply on centralized SSM settings compliance.
+5. Preflight checks gate plan/apply/configure on centralized SSM settings compliance.
 
 ## Operational Notes
 

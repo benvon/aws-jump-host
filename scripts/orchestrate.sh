@@ -8,11 +8,12 @@ TG_DOWNLOAD_DIR="${TG_DOWNLOAD_DIR:-${REPO_ROOT}/.cache/terragrunt}"
 usage() {
   cat <<USAGE
 Usage:
-  $0 <init|plan|apply|check|destroy> --live-dir <path> --env <env> --subenv <subenv> --region <region> [--users-vars <path>] [--expected-run-as-user <user>] [--destroy-state]
+  $0 <init|plan|apply|configure|check|destroy> --live-dir <path> --env <env> --subenv <subenv> --region <region> [--users-vars <path>] [--expected-run-as-user <user>] [--destroy-state]
 
 Examples:
   $0 init --live-dir ./examples/live --env dev --subenv east --region us-east-1 --users-vars ./ansible/vars-schema.example.yml
   $0 plan --live-dir ./examples/live --env dev --subenv east --region us-east-1 --users-vars /path/to/users.yml
+  $0 configure --live-dir ./examples/live --env dev --subenv east --region us-east-1 --users-vars /path/to/users.yml
 USAGE
 }
 
@@ -197,6 +198,11 @@ case "$command_name" in
     run_tg "$endpoints_dir" apply -auto-approve
     run_tg "$jump_hosts_dir" apply -auto-approve
 
+    run_ansible "jump_hosts.yml"
+    ;;
+
+  configure)
+    run_preflight
     run_ansible "jump_hosts.yml"
     ;;
 
