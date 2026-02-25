@@ -165,6 +165,7 @@ case "$command_name" in
     ansible-lint ansible
     yamllint .
     shellcheck scripts/*.sh
+    tflint --init
     tflint --recursive modules/terraform
     tfsec modules/terraform
     checkov -d modules/terraform

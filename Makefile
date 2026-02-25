@@ -30,6 +30,7 @@ fmt-check:
 	terragrunt hcl format --check
 
 lint:
+	tflint --init
 	@for module in modules/terraform/*; do \
 		echo "tflint $$module"; \
 		tflint --chdir "$$module"; \
