@@ -35,11 +35,13 @@ install-tools:
 
 fmt:
 	terraform fmt -recursive modules examples
-	terragrunt hcl format
+	terragrunt hcl format --working-dir terragrunt
+	terragrunt hcl format --working-dir examples/live
 
 fmt-check:
 	terraform fmt -check -recursive modules examples
-	terragrunt hcl format --check
+	terragrunt hcl format --check --working-dir terragrunt
+	terragrunt hcl format --check --working-dir examples/live
 
 lint: install-tools
 	tflint --init
