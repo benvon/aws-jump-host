@@ -16,9 +16,8 @@ locals {
   effective_access_log_prefix      = trim(var.access_log_prefix, "/")
 }
 
-#tfsec:ignore:aws-s3-enable-bucket-logging This bucket is the dedicated destination for S3 access logs. Logging it would cause recursive log chains.
 #checkov:skip=CKV_AWS_18:This bucket is the dedicated destination for S3 access logs. Logging it would cause recursive log chains.
-resource "aws_s3_bucket" "access_logs" {
+resource "aws_s3_bucket" "access_logs" { #tfsec:ignore:aws-s3-enable-bucket-logging This bucket is the dedicated destination for S3 access logs. Logging it would cause recursive log chains.
   count = var.create_access_log_bucket ? 1 : 0
 
   bucket = local.effective_access_log_bucket_name
