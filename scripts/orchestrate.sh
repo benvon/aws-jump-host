@@ -163,7 +163,7 @@ case "$command_name" in
     terraform fmt -check -recursive
     terragrunt hcl format --check --working-dir terragrunt
     terragrunt hcl format --check --working-dir examples/live
-    ansible-lint ansible
+    ansible-lint ansible/playbooks ansible/roles ansible/group_vars ansible/requirements.yml ansible/vars-schema.example.yml
     yamllint .
     shellcheck scripts/*.sh
     tflint --init
