@@ -57,9 +57,9 @@ EOF_PROVIDER
 }
 
 inputs = {
-  common_tags      = local.common_tags
-  environment      = local.env
-  sub_environment  = local.subenv
-  aws_region       = local.aws_region
-  target_account   = local.account_id
+  common_tags     = local.common_tags
+  environment     = local.env
+  sub_environment = local.subenv
+  aws_region      = local.aws_region
+  target_account  = local.account_id
 }
