@@ -8,10 +8,11 @@ SUBENV ?= east
 REGION ?= us-east-1
 USERS_VARS ?= ansible/vars-schema.example.yml
 
-.PHONY: help fmt fmt-check lint validate check plan-example apply-example destroy-example
+.PHONY: help install-tools fmt fmt-check lint validate check plan-example apply-example destroy-example
 
 help:
 	@echo "Targets:"
+	@echo "  install-tools - Install required local toolchain dependencies"
 	@echo "  fmt           - Apply formatting for terraform and terragrunt files"
 	@echo "  fmt-check     - Check formatting for terraform and terragrunt files"
 	@echo "  lint          - Run static linters and policy checks"
@@ -21,6 +22,17 @@ help:
 	@echo "  apply-example - Run orchestrator apply against example live config"
 	@echo "  destroy-example - Run orchestrator destroy against example live config"
 
+install-tools:
+	@if command -v mise >/dev/null 2>&1; then \
+		echo "Installing mise-managed tools from .tool-versions"; \
+		mise install; \
+	else \
+		echo "mise not found; skipping .tool-versions installation"; \
+	fi
+	python -m pip install --upgrade pip
+	python -m pip install -r requirements-dev.txt
+	ansible-galaxy collection install -r ansible/requirements.yml
+
 fmt:
 	terraform fmt -recursive modules examples
 	terragrunt hcl format
@@ -29,7 +41,7 @@ fmt-check:
 	terraform fmt -check -recursive modules examples
 	terragrunt hcl format --check
 
-lint:
+lint: install-tools
 	tflint --init
 	@for module in modules/terraform/*; do \
 		echo "tflint $$module"; \
@@ -41,7 +53,7 @@ lint:
 	yamllint .
 	shellcheck scripts/*.sh
 
-validate:
+validate: install-tools
 	@for module in modules/terraform/*; do \
 		echo "terraform validate $$module"; \
 		terraform -chdir="$$module" init -backend=false -input=false -no-color > /dev/null; \
@@ -54,7 +66,7 @@ validate:
 	ansible-playbook -i ansible/inventory/hosts.yml ansible/playbooks/jump_hosts.yml --syntax-check
 	ansible-playbook -i ansible/inventory/hosts.yml ansible/playbooks/decommission.yml --syntax-check
 
-check: fmt-check lint validate
+check: install-tools fmt-check lint validate
 	@if [[ "${SKIP_PREFLIGHT:-false}" == "true" ]]; then \
 		echo "Skipping AWS SSM preflight (SKIP_PREFLIGHT=true)."; \
 	else \

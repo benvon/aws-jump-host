@@ -1,0 +1,4 @@
+ansible-core>=2.15,<2.18
+ansible-lint>=6,<26
+yamllint>=1,<2
+checkov>=3,<4
