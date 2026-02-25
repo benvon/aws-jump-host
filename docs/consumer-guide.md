@@ -4,6 +4,10 @@
 
 Use this repository as shared orchestration code while storing environment-specific values and secrets in an external repository.
 
+For AWS Security/IAM and user provisioning prerequisites, use:
+
+- `docs/security-user-prerequisites.md`
+
 ## External Inputs Repository Pattern
 
 Create a separate repo with:

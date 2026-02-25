@@ -1,5 +1,9 @@
 # Access Model
 
+Primary handoff document for prerequisite ownership and setup:
+
+- `docs/security-user-prerequisites.md`
+
 ## Responsibility Split
 
 External platform/IAM team owns:
