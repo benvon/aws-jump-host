@@ -4,7 +4,7 @@ This repository follows major-version compatibility ranges (not strict patch pin
 
 ## Supported Ranges
 
-- Terraform: 1.6.x - 1.9.x
+- Terraform: versions as defined in `.tool-versions` and CI workflows (major-version compatibility; no strict patch pinning)
 - Terragrunt: 0.55.x - 0.68.x
 - Ansible Core: 2.15.x - 2.17.x
 - Python: 3.10+
