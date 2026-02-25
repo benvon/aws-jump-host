@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<USAGE
-Usage: $0 --region <aws-region> --expected-log-group <name> [--expected-run-as-user <name>]
+Usage: $0 --region <aws-region> --expected-log-group <name>
 
 Validates externally managed SSM Session Manager service settings required by this solution.
 USAGE
@@ -11,7 +11,6 @@ USAGE
 
 region=""
 expected_log_group=""
-expected_run_as_user=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -21,10 +20,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --expected-log-group)
       expected_log_group="$2"
-      shift 2
-      ;;
-    --expected-run-as-user)
-      expected_run_as_user="$2"
       shift 2
       ;;
     -h|--help)
@@ -77,14 +72,6 @@ fi
 if [[ "$cloudwatch_log_group" != "$expected_log_group" ]]; then
   echo "Non-compliant: cloudWatchLogGroupName '$cloudwatch_log_group' != expected '$expected_log_group'" >&2
   exit 1
-fi
-
-if [[ -n "$expected_run_as_user" ]]; then
-  run_as_default_user="$(setting_value /ssm/sessionmanager/runAsDefaultUser)"
-  if [[ "$run_as_default_user" != "$expected_run_as_user" ]]; then
-    echo "Non-compliant: runAsDefaultUser '$run_as_default_user' != expected '$expected_run_as_user'" >&2
-    exit 1
-  fi
 fi
 
 echo "SSM preflight checks passed."

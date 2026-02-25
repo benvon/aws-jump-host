@@ -160,11 +160,10 @@ resource "aws_instance" "host" {
   }
 
   tags = merge(var.common_tags, each.value.tags, {
-    Name             = "${var.name_prefix}-${each.key}"
-    JumpHost         = "true"
-    AccessProfile    = each.value.access_profile
-    RunAsDefaultUser = each.value.run_as_default_user
-    ManagedBy        = "terraform"
+    Name          = "${var.name_prefix}-${each.key}"
+    JumpHost      = "true"
+    AccessProfile = each.value.access_profile
+    ManagedBy     = "terraform"
   })
 }
 

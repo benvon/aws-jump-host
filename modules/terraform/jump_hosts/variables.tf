@@ -7,7 +7,6 @@ variable "hosts" {
     instance_type       = optional(string, "t3.micro")
     ami_id              = optional(string)
     access_profile      = string
-    run_as_default_user = string
     root_volume_size_gb = optional(number, 20)
     home_volume_size_gb = optional(number, 20)
     tags                = optional(map(string), {})

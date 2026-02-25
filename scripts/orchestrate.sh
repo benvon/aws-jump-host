@@ -8,7 +8,7 @@ TG_DOWNLOAD_DIR="${TG_DOWNLOAD_DIR:-${REPO_ROOT}/.cache/terragrunt}"
 usage() {
   cat <<USAGE
 Usage:
-  $0 <init|plan|apply|configure|check|destroy> --live-dir <path> --env <env> --subenv <subenv> --region <region> [--users-vars <path>] [--expected-run-as-user <user>] [--destroy-state]
+  $0 <init|plan|apply|configure|check|destroy> --live-dir <path> --env <env> --subenv <subenv> --region <region> [--users-vars <path>] [--destroy-state]
 
 Examples:
   $0 init --live-dir ./examples/live --env dev --subenv east --region us-east-1 --users-vars ./ansible/vars-schema.example.yml
@@ -43,7 +43,6 @@ env_name=""
 subenv_name=""
 aws_region=""
 users_vars=""
-expected_run_as_user=""
 destroy_state="false"
 
 while [[ $# -gt 0 ]]; do
@@ -66,10 +65,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --users-vars)
       users_vars="$2"
-      shift 2
-      ;;
-    --expected-run-as-user)
-      expected_run_as_user="$2"
       shift 2
       ;;
     --destroy-state)
@@ -118,9 +113,6 @@ run_preflight() {
   fi
 
   local cmd=(scripts/preflight_ssm_compliance.sh --region "$aws_region" --expected-log-group "$expected_log_group")
-  if [[ -n "$expected_run_as_user" ]]; then
-    cmd+=(--expected-run-as-user "$expected_run_as_user")
-  fi
   "${cmd[@]}"
 }
 

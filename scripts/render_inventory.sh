@@ -56,7 +56,7 @@ fi
 
 mkdir -p "$(dirname "$output_path")"
 
-hosts_json="$(terragrunt -chdir="$terragrunt_dir" output -json hosts)"
+hosts_json="$(terragrunt --working-dir "$terragrunt_dir" output -json hosts)"
 
 jq -n \
   --argjson hosts "$hosts_json" \
@@ -72,8 +72,7 @@ jq -n \
                 ansible_host: $h.value.instance_id,
                 host_name: $h.key,
                 private_ip: $h.value.private_ip,
-                access_profile: $h.value.access_profile,
-                run_as_default_user: $h.value.run_as_default_user
+                access_profile: $h.value.access_profile
               }
             )
           )

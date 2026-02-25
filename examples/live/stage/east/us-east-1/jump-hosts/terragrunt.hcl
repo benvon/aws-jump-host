@@ -28,7 +28,6 @@ inputs = {
       subnet_id           = local.region_config.locals.default_host_subnet_id
       security_group_ids  = []
       access_profile      = "ops"
-      run_as_default_user = "jumpops"
       root_volume_size_gb = 20
       home_volume_size_gb = 50
       tags = {
