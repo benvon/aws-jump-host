@@ -12,14 +12,13 @@ terraform {
 data "aws_caller_identity" "current" {}
 
 locals {
-  effective_access_log_bucket_name = var.create_access_log_bucket ? coalesce(var.access_log_bucket_name, "${var.state_bucket_name}-access-logs") : var.access_log_bucket_name
+  effective_access_log_bucket_name = coalesce(var.access_log_bucket_name, "${var.state_bucket_name}-access-logs")
   effective_access_log_prefix      = trim(var.access_log_prefix, "/")
 }
 
-resource "aws_s3_bucket" "access_logs" { #tfsec:ignore:aws-s3-enable-bucket-logging This bucket is the dedicated destination for S3 access logs. Logging it would cause recursive log chains.
-  count = var.create_access_log_bucket ? 1 : 0
-
+resource "aws_s3_bucket" "access_logs" { #tfsec:ignore:aws-s3-enable-bucket-logging This bucket is the dedicated destination for S3 access logs. Logging it would cause recursive log chains. #tfsec:ignore:aws-s3-enable-versioning Versioning is configured via standalone aws_s3_bucket_versioning.
   #checkov:skip=CKV_AWS_18:This bucket is the dedicated destination for S3 access logs. Logging it would cause recursive log chains.
+  #checkov:skip=CKV_AWS_21:Versioning is configured via a standalone aws_s3_bucket_versioning resource.
   #checkov:skip=CKV2_AWS_62:S3 event notifications are intentionally not configured for state/log buckets in this module.
   #checkov:skip=CKV_AWS_144:Cross-region replication is intentionally left to higher-level DR policies.
   bucket = local.effective_access_log_bucket_name
@@ -27,9 +26,7 @@ resource "aws_s3_bucket" "access_logs" { #tfsec:ignore:aws-s3-enable-bucket-logg
 }
 
 resource "aws_s3_bucket_public_access_block" "access_logs" {
-  count = var.create_access_log_bucket ? 1 : 0
-
-  bucket = aws_s3_bucket.access_logs[0].id
+  bucket = aws_s3_bucket.access_logs.id
 
   block_public_acls       = true
   block_public_policy     = true
@@ -38,19 +35,16 @@ resource "aws_s3_bucket_public_access_block" "access_logs" {
 }
 
 resource "aws_s3_bucket_versioning" "access_logs" {
-  count = var.create_access_log_bucket ? 1 : 0
-
-  bucket = aws_s3_bucket.access_logs[0].id
+  bucket = aws_s3_bucket.access_logs.id
 
   versioning_configuration {
     status = "Enabled"
   }
 }
 
-resource "aws_s3_bucket_server_side_encryption_configuration" "access_logs" {
-  count = var.create_access_log_bucket ? 1 : 0
-
-  bucket = aws_s3_bucket.access_logs[0].id
+resource "aws_s3_bucket_server_side_encryption_configuration" "access_logs" { #tfsec:ignore:aws-s3-encryption-customer-key Logging bucket is intentionally configured for AWS-managed KMS per platform requirement.
+  #checkov:skip=CKV_AWS_145:Logging bucket is intentionally configured for AWS-managed KMS per platform requirement.
+  bucket = aws_s3_bucket.access_logs.id
 
   rule {
     apply_server_side_encryption_by_default {
@@ -61,9 +55,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "access_logs" {
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "access_logs" {
-  count = var.create_access_log_bucket ? 1 : 0
-
-  bucket = aws_s3_bucket.access_logs[0].id
+  bucket = aws_s3_bucket.access_logs.id
 
   rule {
     id     = "expire-old-access-logs"
@@ -80,8 +72,6 @@ resource "aws_s3_bucket_lifecycle_configuration" "access_logs" {
 }
 
 data "aws_iam_policy_document" "access_logs" {
-  count = var.create_access_log_bucket ? 1 : 0
-
   statement {
     sid    = "DenyInsecureTransport"
     effect = "Deny"
@@ -94,8 +84,8 @@ data "aws_iam_policy_document" "access_logs" {
     }
 
     resources = [
-      aws_s3_bucket.access_logs[0].arn,
-      "${aws_s3_bucket.access_logs[0].arn}/*"
+      aws_s3_bucket.access_logs.arn,
+      "${aws_s3_bucket.access_logs.arn}/*"
     ]
 
     condition {
@@ -117,7 +107,7 @@ data "aws_iam_policy_document" "access_logs" {
     }
 
     resources = [
-      "${aws_s3_bucket.access_logs[0].arn}/${local.effective_access_log_prefix}/${var.state_bucket_name}/*"
+      "${aws_s3_bucket.access_logs.arn}/${local.effective_access_log_prefix}/${var.state_bucket_name}/*"
     ]
 
     condition {
@@ -135,10 +125,8 @@ data "aws_iam_policy_document" "access_logs" {
 }
 
 resource "aws_s3_bucket_policy" "access_logs" {
-  count = var.create_access_log_bucket ? 1 : 0
-
-  bucket = aws_s3_bucket.access_logs[0].id
-  policy = data.aws_iam_policy_document.access_logs[0].json
+  bucket = aws_s3_bucket.access_logs.id
+  policy = data.aws_iam_policy_document.access_logs.json
 }
 
 resource "aws_s3_bucket" "state" {

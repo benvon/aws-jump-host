@@ -13,6 +13,8 @@ data "aws_ssm_parameter" "al2023_ami" {
   name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
 }
 
+data "aws_partition" "current" {}
+
 data "aws_subnet" "host" {
   for_each = var.hosts
   id       = each.value.subnet_id
@@ -56,14 +58,35 @@ resource "aws_iam_role" "instance" {
 
 data "aws_iam_policy_document" "ssm_core" {
   statement {
-    sid = "SsmAgentCore"
+    sid = "SsmManagedInstanceUpdate"
+
+    actions = ["ssm:UpdateInstanceInformation"]
+
+    resources = [
+      "arn:${data.aws_partition.current.partition}:ssm:*:*:managed-instance/*"
+    ]
+  }
+
+  statement {
+    sid = "SsmMessageChannels"
 
     actions = [
-      "ssm:UpdateInstanceInformation",
       "ssmmessages:CreateControlChannel",
       "ssmmessages:CreateDataChannel",
       "ssmmessages:OpenControlChannel",
       "ssmmessages:OpenDataChannel",
+    ]
+
+    resources = [
+      "arn:${data.aws_partition.current.partition}:ssmmessages:*:*:control-channel/*",
+      "arn:${data.aws_partition.current.partition}:ssmmessages:*:*:data-channel/*",
+    ]
+  }
+
+  statement {
+    sid = "Ec2MessagesCore"
+
+    actions = [
       "ec2messages:AcknowledgeMessage",
       "ec2messages:DeleteMessage",
       "ec2messages:FailMessage",
@@ -72,7 +95,11 @@ data "aws_iam_policy_document" "ssm_core" {
       "ec2messages:SendReply"
     ]
 
-    resources = ["*"]
+    resources = [
+      "arn:${data.aws_partition.current.partition}:ec2messages:*:*:endpoint/*",
+      "arn:${data.aws_partition.current.partition}:ec2messages:*:*:message/*",
+      "arn:${data.aws_partition.current.partition}:ec2messages:*:*:queue/*",
+    ]
   }
 }
 

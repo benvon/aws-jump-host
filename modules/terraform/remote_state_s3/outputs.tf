@@ -14,6 +14,6 @@ output "access_log_bucket_name" {
 }
 
 output "access_log_bucket_arn" {
-  description = "ARN of the access log bucket when managed by this module; null when external."
-  value       = var.create_access_log_bucket ? aws_s3_bucket.access_logs[0].arn : null
+  description = "ARN of the managed access log bucket."
+  value       = aws_s3_bucket.access_logs.arn
 }

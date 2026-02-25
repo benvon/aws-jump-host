@@ -6,8 +6,7 @@ Creates an encrypted, versioned S3 bucket for Terraform state and enables server
 
 - `state_bucket_name` (string)
 - `kms_key_arn` (string|null): optional customer-managed KMS key.
-- `create_access_log_bucket` (bool, default `true`): create/manage a dedicated access-log bucket.
-- `access_log_bucket_name` (string|null): optional access-log bucket name. Required when `create_access_log_bucket=false`.
+- `access_log_bucket_name` (string|null): optional access-log bucket name. Defaults to `<state_bucket_name>-access-logs`.
 - `access_log_prefix` (string, default `s3-access-logs`)
 - `access_log_retention_days` (number, default `365`)
 - `force_destroy` (bool, default `false`)
