@@ -126,6 +126,7 @@ run_preflight() {
 run_ansible() {
   local playbook="$1"
   local check_mode="${2:-false}"
+  local omit_users_vars="${3:-false}"
   local extra=()
 
   require_cmd ansible-playbook
@@ -133,7 +134,7 @@ run_ansible() {
 
   scripts/render_inventory.sh --terragrunt-dir "$jump_hosts_dir" --output "$inventory_path"
 
-  if [[ -n "$users_vars" ]]; then
+  if [[ -n "$users_vars" && "$omit_users_vars" != "true" ]]; then
     extra+=(--extra-vars "@$users_vars")
   fi
 
@@ -201,7 +202,7 @@ case "$command_name" in
 
   destroy)
     if [[ -n "$users_vars" ]]; then
-      run_ansible "decommission.yml"
+      run_ansible "decommission.yml" "false" "true"
     else
       echo "Skipping Ansible decommission hooks (no --users-vars provided)."
     fi
