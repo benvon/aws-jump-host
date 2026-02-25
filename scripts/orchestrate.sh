@@ -160,11 +160,11 @@ case "$command_name" in
     require_cmd tfsec
     require_cmd checkov
 
-    terraform fmt -check -recursive
+    terraform fmt -check -recursive modules examples
     terragrunt hcl format --check --working-dir terragrunt
     terragrunt hcl format --check --working-dir examples/live
     ansible-lint ansible/playbooks ansible/roles ansible/group_vars ansible/requirements.yml ansible/vars-schema.example.yml
-    yamllint .
+    yamllint .github/workflows ansible/playbooks ansible/roles ansible/group_vars ansible/requirements.yml ansible/vars-schema.example.yml .ansible-lint .yamllint.yml
     shellcheck scripts/*.sh
     tflint --init
     tflint --recursive modules/terraform

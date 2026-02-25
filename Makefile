@@ -8,6 +8,7 @@ SUBENV ?= east
 REGION ?= us-east-1
 USERS_VARS ?= ansible/vars-schema.example.yml
 ANSIBLE_LINT_PATHS ?= ansible/playbooks ansible/roles ansible/group_vars ansible/requirements.yml ansible/vars-schema.example.yml
+YAMLLINT_PATHS ?= .github/workflows ansible/playbooks ansible/roles ansible/group_vars ansible/requirements.yml ansible/vars-schema.example.yml .ansible-lint .yamllint.yml
 
 .PHONY: help install-tools fmt fmt-check lint validate check plan-example apply-example destroy-example
 
@@ -53,7 +54,7 @@ lint: install-tools
 	tfsec modules/terraform
 	checkov -d modules/terraform
 	ansible-lint $(ANSIBLE_LINT_PATHS)
-	yamllint .
+	yamllint $(YAMLLINT_PATHS)
 	shellcheck scripts/*.sh
 
 validate: install-tools
