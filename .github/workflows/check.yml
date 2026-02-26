@@ -1,0 +1,47 @@
+name: check
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.14.6
+
+      - name: Setup Terragrunt
+        uses: autero1/action-terragrunt@v3
+        with:
+          terragrunt-version: 0.99.4
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible-core ansible-lint yamllint checkov
+          curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh | bash
+          sudo apt-get update
+          sudo apt-get install -y shellcheck jq
+          ansible-galaxy collection install -r ansible/requirements.yml
+
+      - name: Full check (static + validation)
+        env:
+          SKIP_PREFLIGHT: "true"
+        run: make check

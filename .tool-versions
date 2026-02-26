@@ -1,0 +1,15 @@
+# Core IaC/orchestration tools
+terraform 1.14.6
+terragrunt 0.99.4
+
+# Runtime and cloud CLI
+python 3.11.11
+awscli 2.17.61
+
+# Static analysis/security tooling used in make/CI
+tflint 0.55.1
+tfsec 1.28.14
+
+# Script and shell utilities used in make/scripts
+jq 1.7.1
+shellcheck 0.10.0

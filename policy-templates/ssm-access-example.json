@@ -1,0 +1,47 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowStartSessionOnTaggedJumpHosts",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:StartSession",
+        "ssm:ResumeSession",
+        "ssm:TerminateSession"
+      ],
+      "Resource": [
+        "arn:aws:ec2:*:*:instance/*",
+        "arn:aws:ssm:*:*:managed-instance/*",
+        "arn:aws:ssm:*:*:session/${aws:username}-*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "ssm:resourceTag/JumpHost": "true"
+        },
+        "ForAnyValue:StringEquals": {
+          "ssm:resourceTag/AccessProfile": [
+            "${aws:PrincipalTag/AccessProfile}"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "AllowSessionDocumentUsage",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetDocument",
+        "ssm:DescribeDocument"
+      ],
+      "Resource": "arn:aws:ssm:*:*:document/SSM-SessionManagerRunShell"
+    },
+    {
+      "Sid": "AllowDescribeForSessionTargets",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:DescribeInstanceInformation",
+        "ec2:DescribeInstances"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

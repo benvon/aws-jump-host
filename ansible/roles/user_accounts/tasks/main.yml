@@ -1,0 +1,104 @@
+---
+- name: Validate user definition schema
+  ansible.builtin.assert:
+    that:
+      - item.username is string
+      - item.groups is defined
+      - item.groups is iterable
+      - item.sudo_profile in ['none', 'ops', 'admin']
+      - item.state is not defined or item.state in ['present', 'absent']
+    fail_msg: "Invalid user schema for {{ item | to_nice_json }}"
+  loop: "{{ user_accounts_users }}"
+  loop_control:
+    label: "{{ item.username | default('unknown') }}"
+
+- name: Gather local passwd database
+  ansible.builtin.getent:
+    database: passwd
+
+- name: Build declared user list
+  ansible.builtin.set_fact:
+    user_accounts_declared_users: "{{ user_accounts_users | map(attribute='username') | list }}"
+
+- name: Initialize managed local user list
+  ansible.builtin.set_fact:
+    user_accounts_managed_local_users: []
+
+- name: Collect local users above managed UID threshold
+  ansible.builtin.set_fact:
+    user_accounts_managed_local_users: "{{ user_accounts_managed_local_users + [item.key] }}"
+  loop: "{{ ansible_facts.getent_passwd | dict2items }}"
+  when:
+    - (item.value[1] | int) >= user_accounts_managed_user_uid_min
+    - item.key not in user_accounts_managed_user_exclusions
+
+- name: Determine undeclared users to disable
+  ansible.builtin.set_fact:
+    user_accounts_users_to_disable: "{{ user_accounts_managed_local_users | difference(user_accounts_declared_users) }}"
+
+- name: Ensure sudo-capable group exists
+  ansible.builtin.group:
+    name: wheel
+    state: present
+
+- name: Ensure declared users exist with locked passwords
+  ansible.builtin.user:
+    name: "{{ item.username }}"
+    shell: "{{ item.shell | default('/bin/bash') }}"
+    home: "{{ item.home | default('/home/' ~ item.username) }}"
+    create_home: true
+    groups: >-
+      {{
+        (
+          (item.groups | default([])) +
+          (['wheel'] if item.sudo_profile in ['ops', 'admin'] else [])
+        ) | unique | join(',')
+      }}
+    append: false
+    password_lock: true
+    state: "{{ item.state | default('present') }}"
+  loop: "{{ user_accounts_users }}"
+  loop_control:
+    label: "{{ item.username }}"
+
+- name: Configure sudoers drop-ins for users
+  ansible.builtin.template:
+    src: sudoers.j2
+    dest: "/etc/sudoers.d/jump-host-{{ item.username }}"
+    owner: root
+    group: root
+    mode: "0440"
+    validate: "/usr/sbin/visudo -cf %s"
+  loop: "{{ user_accounts_users }}"
+  loop_control:
+    label: "{{ item.username }}"
+  when:
+    - (item.state | default('present')) == 'present'
+    - item.sudo_profile != 'none'
+
+- name: Remove sudoers drop-ins for users without sudo
+  ansible.builtin.file:
+    path: "/etc/sudoers.d/jump-host-{{ item.username }}"
+    state: absent
+  loop: "{{ user_accounts_users }}"
+  loop_control:
+    label: "{{ item.username }}"
+  when:
+    - (item.state | default('present')) != 'present' or item.sudo_profile == 'none'
+
+- name: Disable undeclared managed users (authoritative reconciliation)
+  ansible.builtin.user:
+    name: "{{ item }}"
+    state: present
+    shell: /sbin/nologin
+    password_lock: true
+    expires: 1
+    groups: ""
+    append: false
+  loop: "{{ user_accounts_users_to_disable }}"
+
+- name: Remove sudoers for disabled users
+  ansible.builtin.file:
+    path: "/etc/sudoers.d/jump-host-{{ item }}"
+    state: absent
+  loop: "{{ user_accounts_users_to_disable }}"

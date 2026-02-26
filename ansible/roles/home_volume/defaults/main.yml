@@ -1,0 +1,7 @@
+---
+home_volume_device_candidates:
+  - /dev/nvme1n1
+  - /dev/xvdf
+  - /dev/sdf
+home_volume_mount_path: /home
+home_volume_fstype: ext4

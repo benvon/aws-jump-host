@@ -1,0 +1,16 @@
+---
+# Example external user declaration schema.
+users:
+  - username: jumpops
+    groups:
+      - ops
+    sudo_profile: ops
+    state: present
+    shell: /bin/bash
+    home: /home/jumpops
+
+  - username: platform-admin
+    groups:
+      - platform
+    sudo_profile: admin
+    state: present

@@ -1,0 +1,75 @@
+---
+- name: Probe candidate home volume devices
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ home_volume_device_candidates }}"
+  register: home_volume_candidate_stats
+
+- name: Select first existing device
+  ansible.builtin.set_fact:
+    home_volume_device: >-
+      {{
+        (home_volume_candidate_stats.results
+          | selectattr('stat.exists', 'equalto', true)
+          | map(attribute='item')
+          | list
+          | first) | default('')
+      }}
+
+- name: Fail when no home volume device was discovered
+  ansible.builtin.fail:
+    msg: "No home volume device found in candidates: {{ home_volume_device_candidates }}"
+  when: home_volume_device | length == 0
+
+- name: Detect filesystem type on home volume device
+  ansible.builtin.command:
+    cmd: "blkid -o value -s TYPE {{ home_volume_device }}"
+  register: home_volume_blkid
+  changed_when: false
+  failed_when: false
+
+- name: Check for existing home volume format marker
+  ansible.builtin.stat:
+    path: "/var/lib/home_volume/marker_{{ home_volume_device | regex_replace('[^A-Za-z0-9]', '_') }}"
+  register: home_volume_format_marker
+
+- name: Create filesystem on unformatted home volume
+  ansible.builtin.command:
+    cmd: "mkfs -t {{ home_volume_fstype }} {{ home_volume_device }}"
+  changed_when: true
+  when: home_volume_blkid.rc != 0 and not (home_volume_format_marker.stat.exists | default(false))
+
+- name: Create home volume format marker
+  ansible.builtin.file:
+    path: "/var/lib/home_volume/marker_{{ home_volume_device | regex_replace('[^A-Za-z0-9]', '_') }}"
+    state: touch
+    mode: "0600"
+  when: home_volume_blkid.rc != 0 and not (home_volume_format_marker.stat.exists | default(false))
+- name: Ensure home mount path exists
+  ansible.builtin.file:
+    path: "{{ home_volume_mount_path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Check whether home mount path is already mounted
+  ansible.builtin.command:
+    cmd: "mountpoint -q {{ home_volume_mount_path }}"
+  register: home_volume_mountpoint
+  changed_when: false
+  failed_when: false
+
+- name: Ensure home volume fstab entry exists
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: "^{{ home_volume_device | regex_escape }}\\s+{{ home_volume_mount_path | regex_escape }}\\s+"
+    line: "{{ home_volume_device }} {{ home_volume_mount_path }} {{ home_volume_fstype }} defaults,nofail 0 2"
+    create: false
+    state: present
+
+- name: Mount dedicated home volume # noqa: command-instead-of-module
+  ansible.builtin.command:
+    cmd: "mount {{ home_volume_mount_path }}"
+  when: home_volume_mountpoint.rc != 0
+  changed_when: true
