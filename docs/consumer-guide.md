@@ -8,6 +8,10 @@ For AWS Security/IAM and user provisioning prerequisites, use:
 
 - `docs/security-user-prerequisites.md`
 
+For cost planning and estimation framework, use:
+
+- `docs/cost-estimation.md`
+
 ## External Inputs Repository Pattern
 
 Create a separate repo with:
