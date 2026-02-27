@@ -56,7 +56,9 @@ fi
 
 mkdir -p "$(dirname "$output_path")"
 
-hosts_json="$(terragrunt --working-dir "$terragrunt_dir" output -json hosts)"
+# When no state exists (e.g. after init but before apply), terragrunt output fails.
+# Use empty object so plan can complete; Ansible will run with zero hosts.
+hosts_json="$(terragrunt --working-dir "$terragrunt_dir" output -json hosts 2>/dev/null)" || hosts_json="{}"
 
 jq -n \
   --argjson hosts "$hosts_json" \
