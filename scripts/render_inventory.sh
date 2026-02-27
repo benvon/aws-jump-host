@@ -56,7 +56,22 @@ fi
 
 mkdir -p "$(dirname "$output_path")"
 
-hosts_json="$(terragrunt --working-dir "$terragrunt_dir" output -json hosts)"
+# When no state exists (e.g. after init but before apply), terragrunt output fails.
+# Use empty object so plan can complete; Ansible will run with zero hosts.
+terragrunt_err_file="$(mktemp)"
+if ! hosts_json="$(terragrunt --working-dir "$terragrunt_dir" output -json hosts 2>"$terragrunt_err_file")"; then
+  if grep -qiE 'no outputs found|no state file|state does not exist' "$terragrunt_err_file"; then
+    # Expected case: no state / no outputs yet. Proceed with an empty inventory.
+    echo "Warning: terragrunt reported no state/outputs; proceeding with empty hosts inventory." >&2
+    hosts_json="{}"
+  else
+    echo "Error: failed to retrieve terragrunt hosts output:" >&2
+    cat "$terragrunt_err_file" >&2
+    rm -f "$terragrunt_err_file"
+    exit 1
+  fi
+fi
+rm -f "$terragrunt_err_file"
 
 jq -n \
   --argjson hosts "$hosts_json" \
