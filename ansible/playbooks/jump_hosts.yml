@@ -15,4 +15,13 @@
         user_accounts_users: "{{ users | default([]) }}"
         user_accounts_managed_user_uid_min: "{{ managed_user_uid_min | default(1000) }}"
         user_accounts_managed_user_exclusions: "{{ managed_user_exclusions | default(['ec2-user', 'ssm-user', 'nobody']) }}"
-        user_accounts_ops_sudo_commands: "{{ ops_sudo_commands | default(['/usr/bin/systemctl', '/usr/bin/journalctl']) }}"
+        user_accounts_ops_sudo_commands: >-
+          {{
+            ops_sudo_commands | default([
+              '/usr/bin/systemctl status *',
+              '/usr/bin/systemctl is-active *',
+              '/usr/bin/systemctl is-failed *',
+              '/usr/bin/systemctl is-enabled *',
+              '/usr/bin/journalctl'
+            ])
+          }}
