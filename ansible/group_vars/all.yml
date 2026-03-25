@@ -14,5 +14,8 @@ home_volume_mount_path: /home
 home_volume_fstype: ext4
 
 ops_sudo_commands:
-  - /usr/bin/systemctl
-  - /usr/bin/journalctl
+  - /usr/bin/systemctl --no-pager status *
+  - /usr/bin/systemctl --no-pager is-active *
+  - /usr/bin/systemctl --no-pager is-failed *
+  - /usr/bin/systemctl --no-pager is-enabled *
+  - /usr/bin/journalctl --no-pager
