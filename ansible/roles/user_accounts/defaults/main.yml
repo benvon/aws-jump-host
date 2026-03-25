@@ -6,8 +6,8 @@ user_accounts_managed_user_exclusions:
   - ssm-user
   - nobody
 user_accounts_ops_sudo_commands:
-  - /usr/bin/systemctl status *
-  - /usr/bin/systemctl is-active *
-  - /usr/bin/systemctl is-failed *
-  - /usr/bin/systemctl is-enabled *
+  - /usr/bin/systemctl --no-pager status *
+  - /usr/bin/systemctl --no-pager is-active *
+  - /usr/bin/systemctl --no-pager is-failed *
+  - /usr/bin/systemctl --no-pager is-enabled *
   - /usr/bin/journalctl
