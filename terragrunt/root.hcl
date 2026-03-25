@@ -21,6 +21,8 @@ locals {
   }
 }
 
+terraform_version_constraint = ">= 1.10"
+
 remote_state {
   backend      = "s3"
   disable_init = local.is_bootstrap
@@ -31,10 +33,11 @@ remote_state {
   }
 
   config = {
-    bucket  = local.state_bucket
-    key     = "${path_relative_to_include()}/terraform.tfstate"
-    region  = local.aws_region
-    encrypt = true
+    bucket       = local.state_bucket
+    key          = "${path_relative_to_include()}/terraform.tfstate"
+    region       = local.aws_region
+    encrypt      = true
+    use_lockfile = true
   }
 }
 
