@@ -35,20 +35,47 @@ locals {
     for host_name, host in local.normalized_hosts : host_name => host
     if length(host.security_group_ids) == 0
   }
+}
 
-  # Compute the full egress ruleset for the module-created default security group.
-  # When restrict_egress is false the single unrestricted HTTPS rule is used.
-  # When restrict_egress is true, only the caller-supplied egress_rules are used;
-  # an empty list results in no egress rules (all outbound traffic is denied).
-  default_sg_egress_rules = var.restrict_egress ? var.egress_rules : [
-    {
-      description = "Allow HTTPS egress for SSM and AWS API access"
-      from_port   = 443
-      to_port     = 443
-      protocol    = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
-    }
-  ]
+# Look up the VPC for every host that will receive a module-created default security group.
+# The VPC primary CIDR is used to build the always-on SSM baseline egress rule so that
+# Session Manager connectivity is preserved regardless of the restrict_egress setting.
+data "aws_vpc" "host" {
+  for_each = local.default_sg_hosts
+  id       = each.value.vpc_id
+}
+
+locals {
+  # Compute the full egress ruleset (per host) for the module-created default security group.
+  #
+  # The SSM baseline rule (TCP/443 to the host's VPC primary CIDR) is ALWAYS prepended so that
+  # SSM Session Manager (ssm, ec2messages, ssmmessages VPC interface endpoints) remains reachable
+  # even when restrict_egress is true and egress_rules is empty.
+  #
+  # When restrict_egress is false, an additional unrestricted TCP/443 rule is appended.
+  # When restrict_egress is true, only the caller-supplied egress_rules are appended.
+  default_sg_egress_rules = {
+    for host_name, host in local.default_sg_hosts : host_name => concat(
+      [
+        {
+          description = "Allow HTTPS to VPC CIDR for SSM, EC2Messages, and SSMMessages endpoints"
+          from_port   = 443
+          to_port     = 443
+          protocol    = "tcp"
+          cidr_blocks = [data.aws_vpc.host[host_name].cidr_block]
+        }
+      ],
+      var.restrict_egress ? var.egress_rules : [
+        {
+          description = "Allow HTTPS egress for SSM and AWS API access"
+          from_port   = 443
+          to_port     = 443
+          protocol    = "tcp"
+          cidr_blocks = ["0.0.0.0/0"]
+        }
+      ]
+    )
+  }
 }
 
 data "aws_iam_policy_document" "ec2_assume_role" {
@@ -137,7 +164,7 @@ resource "aws_security_group" "default" {
   vpc_id      = each.value.vpc_id
 
   dynamic "egress" {
-    for_each = local.default_sg_egress_rules
+    for_each = local.default_sg_egress_rules[each.key]
     content {
       description = egress.value.description
       from_port   = egress.value.from_port
