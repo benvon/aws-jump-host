@@ -35,6 +35,20 @@ locals {
     for host_name, host in local.normalized_hosts : host_name => host
     if length(host.security_group_ids) == 0
   }
+
+  # Compute the full egress ruleset for the module-created default security group.
+  # When restrict_egress is false the single unrestricted HTTPS rule is used.
+  # When restrict_egress is true, only the caller-supplied egress_rules are used;
+  # an empty list results in no egress rules (all outbound traffic is denied).
+  default_sg_egress_rules = var.restrict_egress ? var.egress_rules : [
+    {
+      description = "Allow HTTPS egress for SSM and AWS API access"
+      from_port   = 443
+      to_port     = 443
+      protocol    = "tcp"
+      cidr_blocks = ["0.0.0.0/0"]
+    }
+  ]
 }
 
 data "aws_iam_policy_document" "ec2_assume_role" {
@@ -123,18 +137,7 @@ resource "aws_security_group" "default" {
   vpc_id      = each.value.vpc_id
 
   dynamic "egress" {
-    for_each = var.restrict_egress ? [] : ["default"]
-    content {
-      description = "Allow HTTPS egress for SSM and AWS API access"
-      from_port   = 443
-      to_port     = 443
-      protocol    = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
-    }
-  }
-
-  dynamic "egress" {
-    for_each = var.restrict_egress ? var.egress_rules : []
+    for_each = local.default_sg_egress_rules
     content {
       description = egress.value.description
       from_port   = egress.value.from_port

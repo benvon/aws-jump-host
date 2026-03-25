@@ -20,28 +20,35 @@ module "jump_hosts" {
   restrict_egress = true
   egress_rules = [
     {
-      description = "SSM VPC endpoint"
+      description = "SSM VPC interface endpoint"
       from_port   = 443
       to_port     = 443
       protocol    = "tcp"
       cidr_blocks = ["10.0.1.10/32"]
+    },
+    {
+      description = "EC2Messages VPC interface endpoint"
+      from_port   = 443
+      to_port     = 443
+      protocol    = "tcp"
+      cidr_blocks = ["10.0.1.11/32"]
+    },
+    {
+      description = "SSMMessages VPC interface endpoint"
+      from_port   = 443
+      to_port     = 443
+      protocol    = "tcp"
+      cidr_blocks = ["10.0.1.12/32"]
     },
   ]
   # ...
 }
 ```
 
-### Example – deny all outbound (rely entirely on VPC interface endpoints)
-
-```hcl
-module "jump_hosts" {
-  source = "..."
-
-  restrict_egress = true
-  egress_rules    = []
-  # ...
-}
-```
+> **Important:** When `restrict_egress = true` only the rules in `egress_rules` are applied.
+> An empty `egress_rules` list will deny **all** outbound traffic, including connections to AWS
+> VPC interface endpoints (SSM, EC2Messages, SSMMessages). You must include an egress rule for
+> each endpoint ENI CIDR your jump hosts need to reach, even for internal AWS service endpoints.
 
 ## Outputs
 
