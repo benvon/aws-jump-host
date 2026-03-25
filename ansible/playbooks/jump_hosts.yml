@@ -15,13 +15,4 @@
         user_accounts_users: "{{ users | default([]) }}"
         user_accounts_managed_user_uid_min: "{{ managed_user_uid_min | default(1000) }}"
         user_accounts_managed_user_exclusions: "{{ managed_user_exclusions | default(['ec2-user', 'ssm-user', 'nobody']) }}"
-        user_accounts_ops_sudo_commands: >-
-          {{
-            ops_sudo_commands | default([
-              '/usr/bin/systemctl --no-pager status *',
-              '/usr/bin/systemctl --no-pager is-active *',
-              '/usr/bin/systemctl --no-pager is-failed *',
-              '/usr/bin/systemctl --no-pager is-enabled *',
-              '/usr/bin/journalctl --no-pager'
-            ])
-          }}
+        user_accounts_ops_sudo_commands: "{{ ops_sudo_commands | default([]) }}"
