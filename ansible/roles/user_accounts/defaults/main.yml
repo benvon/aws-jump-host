@@ -10,4 +10,4 @@ user_accounts_ops_sudo_commands:
   - /usr/bin/systemctl --no-pager is-active *
   - /usr/bin/systemctl --no-pager is-failed *
   - /usr/bin/systemctl --no-pager is-enabled *
-  - /usr/bin/journalctl
+  - /usr/bin/journalctl --no-pager
