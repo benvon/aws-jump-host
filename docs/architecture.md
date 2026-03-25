@@ -58,6 +58,6 @@ The resulting platform provisions private jump hosts reachable through AWS Sessi
 
 ## Operational Notes
 
-- Backend locking is S3-only by design in this repository. Coordinate concurrent applies operationally.
+- Backend state locking uses the native S3 lockfile (`use_lockfile = true`, requires Terraform ≥ 1.10). No DynamoDB table is required.
 - Destroy defaults to preserving bootstrap state bucket unless `--destroy-state` is explicitly passed.
 - Production environment inputs are expected to live outside this repository.
