@@ -122,12 +122,26 @@ resource "aws_security_group" "default" {
   description = "Restrictive default security group for jump host ${each.key}"
   vpc_id      = each.value.vpc_id
 
-  egress {
-    description = "Allow HTTPS egress for SSM and AWS API access"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+  dynamic "egress" {
+    for_each = var.restrict_egress ? [] : ["default"]
+    content {
+      description = "Allow HTTPS egress for SSM and AWS API access"
+      from_port   = 443
+      to_port     = 443
+      protocol    = "tcp"
+      cidr_blocks = ["0.0.0.0/0"]
+    }
+  }
+
+  dynamic "egress" {
+    for_each = var.restrict_egress ? var.egress_rules : []
+    content {
+      description = egress.value.description
+      from_port   = egress.value.from_port
+      to_port     = egress.value.to_port
+      protocol    = egress.value.protocol
+      cidr_blocks = egress.value.cidr_blocks
+    }
   }
 
   tags = merge(var.common_tags, each.value.tags, {

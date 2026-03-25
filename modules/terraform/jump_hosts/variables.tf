@@ -30,3 +30,21 @@ variable "volume_kms_key_id" {
   type        = string
   default     = null
 }
+
+variable "restrict_egress" {
+  description = "When true, the module-created default security group uses only the rules in `egress_rules` for outbound traffic. An empty `egress_rules` list will result in no outbound access. When false (default), outbound TCP/443 to 0.0.0.0/0 is allowed."
+  type        = bool
+  default     = false
+}
+
+variable "egress_rules" {
+  description = "Explicit egress rules applied to the module-created default security group when `restrict_egress` is true. Each rule requires `cidr_blocks`, `from_port`, `to_port`, and `protocol`. `description` is optional."
+  type = list(object({
+    description = optional(string, "")
+    from_port   = number
+    to_port     = number
+    protocol    = string
+    cidr_blocks = list(string)
+  }))
+  default = []
+}
