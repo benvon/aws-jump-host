@@ -13,3 +13,6 @@ tfsec 1.28.14
 # Script and shell utilities used in make/scripts
 jq 1.7.1
 shellcheck 0.10.0
+
+# AWS CLI
+aws latest

@@ -21,4 +21,4 @@ This directory contains reference-only Terragrunt configurations.
 
 1. Copy this structure to an external repo.
 2. Update `account.hcl`, `region.hcl`, and stack inputs.
-3. Run `scripts/orchestrate.sh` from this repo with `--live-dir` pointing to external config.
+3. Run `scripts/orchestrate.sh` from this repository root with `--live-dir` pointing at your live config (the script resolves paths from the repo root). `apply` and `destroy` are interactive unless you pass `--auto-approve`.

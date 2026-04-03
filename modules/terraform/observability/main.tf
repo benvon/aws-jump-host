@@ -78,3 +78,41 @@ resource "aws_cloudwatch_log_group" "session" {
   kms_key_id        = local.effective_kms_key_arn
   tags              = var.tags
 }
+
+# Alerting hooks (optional): v1 deployments typically only ship logs to this group. When you are ready to page
+# on activity, set enable_session_log_metric_filters and session_log_alarm_actions. Further ideas: EventBridge
+# rules on CloudTrail ssm:StartSession, metric filters for failed logins, or composite alarms for business hours.
+locals {
+  session_hook_suffix = replace(var.log_group_name, "/", "-")
+}
+
+resource "aws_cloudwatch_log_metric_filter" "session_sudo_hook" {
+  count = var.enable_session_log_metric_filters ? 1 : 0
+
+  name           = "${local.session_hook_suffix}-sudo-hook"
+  log_group_name = aws_cloudwatch_log_group.session.name
+  pattern        = var.session_log_sudo_metric_filter_pattern
+
+  metric_transformation {
+    name      = "JumpHostSessionSudoMentions"
+    namespace = "JumpHost/SessionLogs"
+    value     = "1"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "session_sudo_hook" {
+  count = var.enable_session_log_metric_filters ? 1 : 0
+
+  alarm_name          = "${local.session_hook_suffix}-sudo-hook"
+  alarm_description   = "Starter hook: sudo-like substrings in session logs. Tune pattern; add SNS via session_log_alarm_actions."
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  metric_name         = "JumpHostSessionSudoMentions"
+  namespace           = "JumpHost/SessionLogs"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 1
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = var.session_log_alarm_actions
+  tags                = var.tags
+}

@@ -74,4 +74,15 @@ if [[ "$cloudwatch_log_group" != "$expected_log_group" ]]; then
   exit 1
 fi
 
+# SSM can reference a log group name that does not exist yet; ensure the group is present in CloudWatch.
+log_group_match_count="$(aws logs describe-log-groups \
+  --region "$region" \
+  --log-group-name-prefix "$expected_log_group" \
+  --query "length(logGroups[?logGroupName=='${expected_log_group}'])" \
+  --output text)"
+if [[ "${log_group_match_count:-0}" != "1" ]]; then
+  echo "Non-compliant: CloudWatch log group '${expected_log_group}' not found (apply observability stack first)" >&2
+  exit 1
+fi
+
 echo "SSM preflight checks passed."

@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Fake terragrunt for shell tests; behavior controlled by FAKE_TG_SCENARIO.
+set -euo pipefail
+
+if [[ -n "${FAKE_TG_LOG:-}" ]]; then
+  printf '%q ' "$@" >>"$FAKE_TG_LOG"
+  echo >>"$FAKE_TG_LOG"
+fi
+
+args=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --working-dir) shift 2 ;;
+    *) args+=("$1"); shift ;;
+  esac
+done
+set -- "${args[@]}"
+
+scenario="${FAKE_TG_SCENARIO:-hosts_ok}"
+
+if [[ "${1:-}" == output && "${2:-}" == -json ]]; then
+  if [[ "${3:-}" == hosts ]]; then
+    if [[ "$scenario" == "hosts_ok" ]]; then
+      jq -n -c '{ "core-01": { instance_id: "i-abc", private_ip: "10.0.0.5", access_profile: "ops" } }'
+      exit 0
+    fi
+    echo "fake: output -json hosts unavailable" >&2
+    exit 1
+  fi
+  if [[ "$scenario" == "via_all_json" ]]; then
+    jq -n -c '{ hosts: { value: { "h1": { instance_id: "i-h1", private_ip: "10.0.1.1", access_profile: "admin" } } } }'
+    exit 0
+  fi
+  echo "fake: output -json unavailable" >&2
+  exit 1
+fi
+
+if [[ "${1:-}" == state && "${2:-}" == list ]]; then
+  case "$scenario" in
+    empty_state)
+      exit 0
+      ;;
+    no_state)
+      echo "fake: no state backend" >&2
+      exit 1
+      ;;
+    stale_state)
+      echo "aws_instance.jump_host"
+      exit 0
+      ;;
+    *)
+      echo "fake: state list unexpected for scenario=$scenario" >&2
+      exit 1
+      ;;
+  esac
+fi
+
+if [[ "${1:-}" =~ ^(plan|init|apply|destroy)$ ]]; then
+  exit 0
+fi
+
+echo "fake terragrunt: unhandled: $*" >&2
+exit 99

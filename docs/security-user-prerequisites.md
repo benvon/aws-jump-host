@@ -35,12 +35,16 @@ Starter template in this repo:
 
 ## Required Access Scoping (ABAC)
 
-The role should be scoped to jump hosts using instance tags:
+The role should be scoped to jump hosts using instance tags on **StartSession**:
 
 - `ssm:resourceTag/JumpHost == "true"`
-- `ssm:resourceTag/AccessProfile == ${aws:PrincipalTag/AccessProfile}`
+- `ssm:resourceTag/AccessProfile == ${aws:PrincipalTag/AccessProfile}` using **`StringEquals`** (see `policy-templates/ssm-access-example.json`)
 
-This requires the principal to carry an `AccessProfile` tag (role tag or session tag, per your federation model).
+The principal must carry an `AccessProfile` tag with **exactly one** value (role tag or session tag, per your federation model). Do not use `ForAnyValue:StringEquals` for this pair; it can match unintended profiles when multiple tag values appear in the request context.
+
+**ResumeSession / TerminateSession** in the example policy are limited to session ARNs `.../session/${aws:username}-*`. The `aws:username` value depends on identity type: for an IAM user it is the user name; for `sts:AssumeRole` it is typically the **role session name** (often the federated user identifier). Confirm the resulting session ID prefix in your environment with a test session.
+
+**StartSession** remains constrained by instance tags; operators cannot start sessions on instances whose `AccessProfile` tag does not match their principal tag.
 
 ## Required IAM-to-Linux User Mapping
 

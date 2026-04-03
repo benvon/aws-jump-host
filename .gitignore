@@ -50,3 +50,5 @@ ansible/inventory/generated-*.yml
 .ansible/
 ansible/collections/ansible_collections/
 
+.claude/
+local_code_review.md

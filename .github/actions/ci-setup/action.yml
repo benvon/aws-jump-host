@@ -1,0 +1,40 @@
+name: CI setup
+description: Terraform, Terragrunt, TFLint, Python/Ansible tools, pinned tfsec with checksum, shellcheck, jq
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.14.6
+
+    - name: Setup Terragrunt
+      uses: autero1/action-terragrunt@v3
+      with:
+        terragrunt-version: 0.99.4
+
+    - name: Setup TFLint
+      uses: terraform-linters/setup-tflint@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - name: Install Python tools, tfsec (pinned + SHA256), apt packages, Ansible collections
+      shell: bash
+      run: |
+        set -euo pipefail
+        python -m pip install --upgrade pip
+        pip install ansible-core ansible-lint yamllint checkov
+        TFSEC_VERSION=1.28.14
+        TFSEC_SHA256=329ae7f67f2f1813ebe08de498719ea7003c75d3ca24bb0b038369062508008e
+        curl -sSL "https://github.com/aquasecurity/tfsec/releases/download/v${TFSEC_VERSION}/tfsec_${TFSEC_VERSION}_linux_amd64.tar.gz" -o tfsec.tgz
+        echo "${TFSEC_SHA256}  tfsec.tgz" | sha256sum -c -
+        sudo tar -xzf tfsec.tgz -C /usr/local/bin tfsec
+        rm -f tfsec.tgz
+        sudo apt-get update
+        sudo apt-get install -y shellcheck jq bats
+        mkdir -p ansible/collections
+        ansible-galaxy collection install -r ansible/requirements.yml -p ansible/collections

@@ -8,11 +8,15 @@ TG_DOWNLOAD_DIR="${TG_DOWNLOAD_DIR:-${REPO_ROOT}/.cache/terragrunt}"
 usage() {
   cat <<USAGE
 Usage:
-  $0 <init|plan|apply|configure|check|destroy> --live-dir <path> --env <env> --subenv <subenv> --region <region> [--users-vars <path>] [--destroy-state]
+  $0 <init|plan|apply|configure|check|destroy> --live-dir <path> --env <env> --subenv <subenv> --region <region> [--users-vars <path>] [--destroy-state] [--auto-approve]
+
+  apply and destroy run Terraform interactively by default (no -auto-approve). Pass --auto-approve for
+  non-interactive runs (CI/automation).
 
 Examples:
   $0 init --live-dir ./examples/live --env dev --subenv east --region us-east-1 --users-vars ./ansible/vars-schema.example.yml
   $0 plan --live-dir ./examples/live --env dev --subenv east --region us-east-1 --users-vars /path/to/users.yml
+  $0 apply --live-dir ./examples/live --env dev --subenv east --region us-east-1 --users-vars /path/to/users.yml --auto-approve
   $0 configure --live-dir ./examples/live --env dev --subenv east --region us-east-1 --users-vars /path/to/users.yml
 USAGE
 }
@@ -30,6 +34,24 @@ run_tg() {
   TG_DOWNLOAD_DIR="$TG_DOWNLOAD_DIR" terragrunt --working-dir "$stack_dir" "$@"
 }
 
+run_tg_apply() {
+  local stack_dir="$1"
+  if [[ "$auto_approve" == "true" ]]; then
+    run_tg "$stack_dir" apply -auto-approve
+  else
+    run_tg "$stack_dir" apply
+  fi
+}
+
+run_tg_destroy() {
+  local stack_dir="$1"
+  if [[ "$auto_approve" == "true" ]]; then
+    run_tg "$stack_dir" destroy -auto-approve
+  else
+    run_tg "$stack_dir" destroy
+  fi
+}
+
 if [[ $# -lt 1 ]]; then
   usage
   exit 1
@@ -44,6 +66,7 @@ subenv_name=""
 aws_region=""
 users_vars=""
 destroy_state="false"
+auto_approve="false"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -71,6 +94,10 @@ while [[ $# -gt 0 ]]; do
       destroy_state="true"
       shift
       ;;
+    --auto-approve)
+      auto_approve="true"
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -93,7 +120,7 @@ bootstrap_dir="$region_dir/bootstrap-state"
 observability_dir="$region_dir/observability"
 endpoints_dir="$region_dir/vpc-endpoints"
 jump_hosts_dir="$region_dir/jump-hosts"
-inventory_path="ansible/inventory/generated-${env_name}-${subenv_name}-${aws_region}.yml"
+inventory_path="${REPO_ROOT}/ansible/inventory/generated-${env_name}-${subenv_name}-${aws_region}.yml"
 expected_log_group="/aws/ssm/jump-host/${env_name}/${subenv_name}/${aws_region}"
 
 for dir in "$region_dir" "$bootstrap_dir" "$observability_dir" "$endpoints_dir" "$jump_hosts_dir"; do
@@ -112,7 +139,7 @@ run_preflight() {
     return 0
   fi
 
-  local cmd=(scripts/preflight_ssm_compliance.sh --region "$aws_region" --expected-log-group "$expected_log_group")
+  local cmd=("${SCRIPT_DIR}/preflight_ssm_compliance.sh" --region "$aws_region" --expected-log-group "$expected_log_group")
   "${cmd[@]}"
 }
 
@@ -125,7 +152,7 @@ run_ansible() {
   require_cmd ansible-playbook
   require_cmd jq
 
-  scripts/render_inventory.sh --terragrunt-dir "$jump_hosts_dir" --output "$inventory_path"
+  "${SCRIPT_DIR}/render_inventory.sh" --terragrunt-dir "$jump_hosts_dir" --output "$inventory_path"
 
   if [[ -n "$users_vars" && "$omit_users_vars" != "true" ]]; then
     extra+=(--extra-vars "@$users_vars")
@@ -137,7 +164,7 @@ run_ansible() {
 
   AWS_REGION="$aws_region" ansible-playbook \
     -i "$inventory_path" \
-    "ansible/playbooks/${playbook}" \
+    "${REPO_ROOT}/ansible/playbooks/${playbook}" \
     "${extra[@]}"
 }
 
@@ -185,10 +212,10 @@ case "$command_name" in
 
   apply)
     run_preflight
-    run_tg "$bootstrap_dir" apply -auto-approve
-    run_tg "$observability_dir" apply -auto-approve
-    run_tg "$endpoints_dir" apply -auto-approve
-    run_tg "$jump_hosts_dir" apply -auto-approve
+    run_tg_apply "$bootstrap_dir"
+    run_tg_apply "$observability_dir"
+    run_tg_apply "$endpoints_dir"
+    run_tg_apply "$jump_hosts_dir"
 
     run_ansible "jump_hosts.yml"
     ;;
@@ -205,12 +232,12 @@ case "$command_name" in
       echo "Skipping Ansible decommission hooks (no --users-vars provided)."
     fi
 
-    run_tg "$jump_hosts_dir" destroy -auto-approve
-    run_tg "$endpoints_dir" destroy -auto-approve
-    run_tg "$observability_dir" destroy -auto-approve
+    run_tg_destroy "$jump_hosts_dir"
+    run_tg_destroy "$endpoints_dir"
+    run_tg_destroy "$observability_dir"
 
     if [[ "$destroy_state" == "true" ]]; then
-      run_tg "$bootstrap_dir" destroy -auto-approve
+      run_tg_destroy "$bootstrap_dir"
     else
       echo "Skipping bootstrap-state destroy. Use --destroy-state to remove remote state bucket."
     fi

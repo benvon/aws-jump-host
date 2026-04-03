@@ -1,5 +1,11 @@
 {% if item.sudo_profile == 'admin' -%}
+{% if user_accounts_admin_use_unrestricted_sudo | default(true) -%}
 {{ item.username }} ALL=(ALL) NOPASSWD:ALL
+{% else -%}
+{% set admin_alias = 'ADMIN_CMDS_' ~ (item.username | upper | regex_replace('[^A-Z0-9_]', '_')) -%}
+Cmnd_Alias {{ admin_alias }} = {{ user_accounts_admin_sudo_commands | join(', ') }}
+{{ item.username }} ALL=(ALL) NOPASSWD:{{ admin_alias }}
+{% endif -%}
 {% elif item.sudo_profile == 'ops' -%}
 {% set ops_alias = 'OPS_CMDS_' ~ (item.username | upper | regex_replace('[^A-Z0-9_]', '_')) -%}
 Cmnd_Alias {{ ops_alias }} = {{ user_accounts_ops_sudo_commands | join(', ') }}

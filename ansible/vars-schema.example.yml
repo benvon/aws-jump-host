@@ -1,5 +1,9 @@
 ---
 # Example external user declaration schema.
+#
+# WARNING — sudo_profile: admin uses unrestricted passwordless root (NOPASSWD:ALL) by default.
+# To migrate later, set role vars user_accounts_admin_use_unrestricted_sudo: false and
+# user_accounts_admin_sudo_commands: [ '/usr/bin/somecmd', ... ] (see ansible/roles/user_accounts/defaults/main.yml).
 users:
   - username: jumpops
     groups:
@@ -9,6 +13,7 @@ users:
     shell: /bin/bash
     home: /home/jumpops
 
+  # Example only: admin = full root on the bastion. Prefer ops profile + break-glass admin only if required.
   - username: platform-admin
     groups:
       - platform

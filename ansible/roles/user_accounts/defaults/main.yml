@@ -1,13 +1,20 @@
 ---
+# When false, admin sudo_profile uses user_accounts_admin_sudo_commands (Cmnd_Alias) instead of NOPASSWD:ALL.
+# Set to false and populate the command list when tightening admin access (see vars-schema.example.yml).
+user_accounts_admin_use_unrestricted_sudo: true
+user_accounts_admin_sudo_commands: []
+
 user_accounts_users: []
 user_accounts_managed_user_uid_min: 1000
 user_accounts_managed_user_exclusions:
   - ec2-user
   - ssm-user
   - nobody
+# systemctl lines use a single trailing sudoers glob for the unit name; avoid adding broader wildcards.
 user_accounts_ops_sudo_commands:
   - /usr/bin/systemctl --no-pager status *
   - /usr/bin/systemctl --no-pager is-active *
   - /usr/bin/systemctl --no-pager is-failed *
   - /usr/bin/systemctl --no-pager is-enabled *
-  - /usr/bin/journalctl --no-pager
+  - /usr/bin/journalctl --no-pager -u *
+  - /usr/bin/journalctl --no-pager --unit=*
