@@ -4,7 +4,8 @@ This repository follows major-version compatibility ranges (not strict patch pin
 
 ## Supported Ranges
 
-- Terraform: >= 1.10 (required for native S3 state locking via `use_lockfile = true`; no strict patch pinning above this floor)
+- Terraform: ~> 1.10 (required for native S3 state locking via `use_lockfile = true`; allows any 1.x that satisfies the constraint)
+- AWS provider (modules): ~> 6.0
 - Terragrunt: 0.55.x - 0.68.x
 - Ansible Core: >=2.15,<2.18
 - Python: 3.10+

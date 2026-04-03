@@ -22,6 +22,38 @@ Create a separate repo with:
 
 Then reference module and root paths from this repository.
 
+## Global AWS tags (cascade)
+
+`terragrunt/root.hcl` builds `common_tags` and applies them in two ways:
+
+1. **Provider `default_tags`** (generated `provider_generated.tf`) — taggable AWS resources created in these stacks receive these tags even when a module does not set `tags`.
+2. **Module inputs** — stacks pass `include.root.locals.common_tags` (or merge with it) so modules that explicitly merge tags keep the same baseline keys.
+
+Built-in keys today: `Project`, `Environment`, `SubEnvironment`, `Region`, `ManagedBy`.
+
+To add your own tags once and have them flow everywhere, define optional `extra_tags` maps in your live hierarchy files (same merge as `common_tags`; duplicate keys are overridden by the more specific file):
+
+| File           | Typical use                                      |
+|----------------|--------------------------------------------------|
+| `account.hcl`  | Account-wide tags (`CostCenter`, `Owner`, …)     |
+| `env.hcl`      | Environment-wide tags (`DataClassification`, …) |
+| `subenv.hcl`   | Sub-environment or segment tags                  |
+
+Example in `account.hcl`:
+
+```hcl
+locals {
+  account_id       = "123456789012"
+  assume_role_name = "OrganizationAccountAccessRole"
+  state_bucket     = "my-org-jump-host-state"
+  extra_tags = {
+    CostCenter = "platform-engineering"
+  }
+}
+```
+
+Omit `extra_tags` in a file if you do not need that layer.
+
 ## Minimum Inputs Per Region
 
 - `vpc_id`
