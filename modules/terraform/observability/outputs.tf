@@ -14,6 +14,6 @@ output "kms_key_arn" {
 }
 
 output "session_sudo_metric_alarm_arn" {
-  description = "ARN of the optional session log sudo-hook alarm (empty when enable_session_log_metric_filters is false)."
+  description = "ARN of the optional session log sudo-hook alarm (null when enable_session_log_metric_filters is false)."
   value       = try(aws_cloudwatch_metric_alarm.session_sudo_hook[0].arn, null)
 }

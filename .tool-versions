@@ -4,7 +4,6 @@ terragrunt 0.99.4
 
 # Runtime and cloud CLI
 python 3.11.11
-awscli 2.17.61
 
 # Static analysis/security tooling used in make/CI
 tflint 0.55.1
@@ -15,4 +14,4 @@ jq 1.7.1
 shellcheck 0.10.0
 
 # AWS CLI
-aws latest
+aws 2.34.22
