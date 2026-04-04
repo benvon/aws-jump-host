@@ -12,16 +12,24 @@ locals {
   state_bucket     = local.account_config.locals.state_bucket
   is_bootstrap     = basename(get_terragrunt_dir()) == "bootstrap-state"
 
-  common_tags = {
-    Project        = "aws-jump-host"
-    Environment    = local.env
-    SubEnvironment = local.subenv
-    Region         = local.aws_region
-    ManagedBy      = "terragrunt"
-  }
+  # Base tags + optional extra_tags from live hierarchy (account → env → subenv; later wins on duplicate keys).
+  # The generated AWS provider uses default_tags with this map so taggable resources inherit it automatically;
+  # stacks also pass the same map into modules as common_tags / tags for explicit merges.
+  common_tags = merge(
+    {
+      Project        = "aws-jump-host"
+      Environment    = local.env
+      SubEnvironment = local.subenv
+      Region         = local.aws_region
+      ManagedBy      = "terragrunt"
+    },
+    lookup(local.account_config.locals, "extra_tags", {}),
+    lookup(local.env_config.locals, "extra_tags", {}),
+    lookup(local.subenv_config.locals, "extra_tags", {})
+  )
 }
 
-terraform_version_constraint = ">= 1.10"
+terraform_version_constraint = "~> 1.10"
 
 remote_state {
   backend      = "s3"

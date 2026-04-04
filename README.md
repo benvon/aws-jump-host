@@ -35,6 +35,8 @@ Turn-key solution for deploying and managing private AWS jump hosts through AWS 
 
 ## Example Orchestration
 
+Run `plan` from the repository root (paths to scripts and generated inventory are rooted automatically):
+
 ```bash
 ./scripts/orchestrate.sh plan \
   --live-dir ./examples/live \
@@ -43,3 +45,5 @@ Turn-key solution for deploying and managing private AWS jump hosts through AWS 
   --region us-east-1 \
   --users-vars ./ansible/vars-schema.example.yml
 ```
+
+`apply` and `destroy` run Terraform interactively by default. Add `--auto-approve` for non-interactive use, or use `make apply-example-auto` / `make destroy-example-auto`.

@@ -32,3 +32,24 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "enable_session_log_metric_filters" {
+  description = <<-EOT
+    When true, create a starter CloudWatch Logs metric filter and alarm on the session log group.
+    Defaults to false: initial deployments rely on log delivery only; enable when you add SNS or other alarm_actions.
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "session_log_alarm_actions" {
+  description = "Alarm action ARNs (typically SNS topics) when the session log metric alarm fires. May be empty for a silent hook."
+  type        = list(string)
+  default     = []
+}
+
+variable "session_log_sudo_metric_filter_pattern" {
+  description = "Logs metric filter pattern for the starter hook (tune to match SSM session transcript format)."
+  type        = string
+  default     = "?sudo"
+}

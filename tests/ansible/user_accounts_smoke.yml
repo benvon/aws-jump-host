@@ -1,0 +1,57 @@
+---
+# Renders user_accounts sudoers template to /tmp and asserts expected fragments (no visudo; no become).
+- name: Smoke test user_accounts sudoers template
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  vars:
+    user_accounts_admin_use_unrestricted_sudo: true
+    user_accounts_admin_sudo_commands: []
+    user_accounts_ops_sudo_commands:
+      - /usr/bin/systemctl --no-pager status *
+      - /usr/bin/journalctl --no-pager -u *
+    user_accounts_users:
+      - username: tadmin
+        groups: [wheel]
+        sudo_profile: admin
+      - username: tops
+        groups: [wheel]
+        sudo_profile: ops
+  tasks:
+    - name: Render sudoers fragments
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../../ansible/roles/user_accounts/templates/sudoers.j2"
+        dest: "/tmp/jh-sudoers-smoke-{{ item.username }}"
+        mode: "0600"
+      loop: "{{ user_accounts_users | selectattr('sudo_profile', 'in', ['admin', 'ops']) | list }}"
+      loop_control:
+        label: "{{ item.username }}"
+
+    - name: Slurp admin fragment
+      ansible.builtin.slurp:
+        src: /tmp/jh-sudoers-smoke-tadmin
+      register: admin_frag
+
+    - name: Slurp ops fragment
+      ansible.builtin.slurp:
+        src: /tmp/jh-sudoers-smoke-tops
+      register: ops_frag
+
+    - name: Assert admin unrestricted sudo line
+      ansible.builtin.assert:
+        that:
+          - "'tadmin' in (admin_frag.content | b64decode)"
+          - "'NOPASSWD:ALL' in (admin_frag.content | b64decode)"
+
+    - name: Assert ops alias and journalctl allowlist
+      ansible.builtin.assert:
+        that:
+          - "'OPS_CMDS_TOPS' in (ops_frag.content | b64decode)"
+          - "'journalctl' in (ops_frag.content | b64decode)"
+
+    - name: Remove smoke fragments
+      ansible.builtin.file:
+        path: "/tmp/jh-sudoers-smoke-{{ item }}"
+        state: absent
+      loop: "{{ user_accounts_users | map(attribute='username') | list }}"

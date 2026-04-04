@@ -56,22 +56,29 @@ fi
 
 mkdir -p "$(dirname "$output_path")"
 
-# When no state exists (e.g. after init but before apply), terragrunt output fails.
-# Use empty object so plan can complete; Ansible will run with zero hosts.
+# Fall back to an empty hosts map when there is no state yet or outputs are not populated, so `plan` can run
+# Ansible in check mode with zero hosts. Avoid matching English stderr from Terragrunt (locale/version drift).
+# If state has resources but `hosts` output is unreadable, treat that as an error.
 terragrunt_err_file="$(mktemp)"
-if ! hosts_json="$(terragrunt --working-dir "$terragrunt_dir" output -json hosts 2>"$terragrunt_err_file")"; then
-  if grep -qiE 'no outputs found|no state file|state does not exist' "$terragrunt_err_file"; then
-    # Expected case: no state / no outputs yet. Proceed with an empty inventory.
-    echo "Warning: terragrunt reported no state/outputs; proceeding with empty hosts inventory." >&2
-    hosts_json="{}"
-  else
-    echo "Error: failed to retrieve terragrunt hosts output:" >&2
-    cat "$terragrunt_err_file" >&2
-    rm -f "$terragrunt_err_file"
-    exit 1
-  fi
+state_list_file="$(mktemp)"
+if hosts_json="$(terragrunt --working-dir "$terragrunt_dir" output -json hosts 2>"$terragrunt_err_file")"; then
+  :
+elif all_json="$(terragrunt --working-dir "$terragrunt_dir" output -json 2>"$terragrunt_err_file")"; then
+  hosts_json="$(echo "$all_json" | jq -c '.hosts.value? // {}')"
+elif terragrunt --working-dir "$terragrunt_dir" state list >"$state_list_file" 2>>"$terragrunt_err_file" \
+  && [[ ! -s "$state_list_file" ]]; then
+  echo "Warning: Terraform state is empty or outputs missing in ${terragrunt_dir}; using empty hosts inventory." >&2
+  hosts_json="{}"
+elif ! terragrunt --working-dir "$terragrunt_dir" state list >/dev/null 2>>"$terragrunt_err_file"; then
+  echo "Warning: Terraform state not available in ${terragrunt_dir}; using empty hosts inventory." >&2
+  hosts_json="{}"
+else
+  echo "Error: state has resources but terragrunt outputs (hosts) could not be read:" >&2
+  cat "$terragrunt_err_file" >&2
+  rm -f "$terragrunt_err_file" "$state_list_file"
+  exit 1
 fi
-rm -f "$terragrunt_err_file"
+rm -f "$terragrunt_err_file" "$state_list_file"
 
 jq -n \
   --argjson hosts "$hosts_json" \

@@ -4,26 +4,26 @@
     {
       "Sid": "AllowStartSessionOnTaggedJumpHosts",
       "Effect": "Allow",
-      "Action": [
-        "ssm:StartSession",
-        "ssm:ResumeSession",
-        "ssm:TerminateSession"
-      ],
+      "Action": "ssm:StartSession",
       "Resource": [
         "arn:aws:ec2:*:*:instance/*",
-        "arn:aws:ssm:*:*:managed-instance/*",
-        "arn:aws:ssm:*:*:session/${aws:username}-*"
+        "arn:aws:ssm:*:*:managed-instance/*"
       ],
       "Condition": {
         "StringEquals": {
-          "ssm:resourceTag/JumpHost": "true"
-        },
-        "ForAnyValue:StringEquals": {
-          "ssm:resourceTag/AccessProfile": [
-            "${aws:PrincipalTag/AccessProfile}"
-          ]
+          "ssm:resourceTag/JumpHost": "true",
+          "ssm:resourceTag/AccessProfile": "${aws:PrincipalTag/AccessProfile}"
         }
       }
+    },
+    {
+      "Sid": "AllowResumeTerminateOwnSessions",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:ResumeSession",
+        "ssm:TerminateSession"
+      ],
+      "Resource": "arn:aws:ssm:*:*:session/${aws:username}-*"
     },
     {
       "Sid": "AllowSessionDocumentUsage",

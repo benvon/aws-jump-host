@@ -25,7 +25,7 @@ The resulting platform provisions private jump hosts reachable through AWS Sessi
 
 - `modules/terraform/jump_hosts`: EC2 hosts, instance profile, optional default SG, and persistent `/home` EBS volumes.
 - `modules/terraform/vpc_endpoints_ssm`: shared interface endpoints for private SSM and CloudWatch connectivity.
-- `modules/terraform/observability`: CloudWatch log group and optional KMS key.
+- `modules/terraform/observability`: CloudWatch log group and optional KMS key; optional metric filter and alarm hooks (disabled by default) for future SNS paging.
 - `modules/terraform/remote_state_s3`: encrypted versioned S3 state bucket.
 
 ### Terragrunt
@@ -61,3 +61,7 @@ The resulting platform provisions private jump hosts reachable through AWS Sessi
 - Backend state locking uses the native S3 lockfile (`use_lockfile = true`, requires Terraform ≥ 1.10). No DynamoDB table is required.
 - Destroy defaults to preserving bootstrap state bucket unless `--destroy-state` is explicitly passed.
 - Production environment inputs are expected to live outside this repository.
+
+### Single-AZ examples (accepted tradeoff)
+
+Reference `examples/live` stacks provision **one** jump host in **one** availability zone. That is an intentional **single point of failure** for cost and simplicity: if the instance, AZ, or volume has an outage, SSM access via that host is unavailable until recovery or replacement. For resilience, define multiple entries in the `hosts` map across subnets in different AZs; the Terraform module supports it, but the examples do not demonstrate HA.

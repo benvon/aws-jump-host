@@ -16,6 +16,13 @@
   ansible.builtin.getent:
     database: passwd
 
+# SSM may create ssm-user; it stays out of reconciliation but should not allow password auth.
+- name: Lock password for local ssm-user account
+  ansible.builtin.user:
+    name: ssm-user
+    password_lock: true
+  when: "'ssm-user' in ansible_facts.getent_passwd"
+
 - name: Build declared user list
   ansible.builtin.set_fact:
     user_accounts_declared_users: "{{ user_accounts_users | map(attribute='username') | list }}"
@@ -40,6 +47,17 @@
   ansible.builtin.group:
     name: wheel
     state: present
+
+- name: Validate restricted admin sudo has a non-empty command list
+  ansible.builtin.assert:
+    that:
+      - user_accounts_admin_sudo_commands | length > 0
+    fail_msg: >-
+      user_accounts_admin_use_unrestricted_sudo is false but user_accounts_admin_sudo_commands is empty.
+      Define allowed commands (same pattern as ops) before using restricted admin.
+  when:
+    - not user_accounts_admin_use_unrestricted_sudo | default(true)
+    - (user_accounts_users | selectattr('sudo_profile', 'equalto', 'admin') | rejectattr('state', 'equalto', 'absent') | list | length) > 0
 
 - name: Ensure declared users exist with locked passwords
   ansible.builtin.user:

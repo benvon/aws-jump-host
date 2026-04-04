@@ -1,0 +1,67 @@
+# Optional Terragrunt plan against the bundled example live config (real AWS + remote state).
+# This workflow is manual-only and is designed to succeed when AWS/OIDC is not configured.
+#
+# To actually run plans: set repository secret AWS_PLAN_TEST_ROLE_ARN and configure GitHub as an
+# OIDC identity provider in IAM for that role (trust policy).
+name: Optional AWS plan (manual)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  terragrunt-plan-example:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: CI setup
+        uses: ./.github/actions/ci-setup
+
+      # Skip all AWS steps when the secret is missing — workflow stays green (no OIDC required).
+      - name: Check for AWS plan configuration
+        id: gate
+        env:
+          AWS_PLAN_TEST_ROLE_ARN: ${{ secrets.AWS_PLAN_TEST_ROLE_ARN }}
+        run: |
+          if [ -z "${AWS_PLAN_TEST_ROLE_ARN}" ]; then
+            echo "run_aws_plan=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_aws_plan=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure AWS credentials (OIDC)
+        id: aws
+        if: steps.gate.outputs.run_aws_plan == 'true'
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PLAN_TEST_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Terragrunt init and plan (dev / east / us-east-1)
+        if: steps.gate.outputs.run_aws_plan == 'true' && steps.aws.outcome == 'success'
+        env:
+          TG_DOWNLOAD_DIR: ${{ github.workspace }}/.cache/terragrunt
+        run: |
+          set -euo pipefail
+          base="examples/live/dev/east/us-east-1"
+          for name in bootstrap-state observability vpc-endpoints jump-hosts; do
+            echo "=== $base/$name ==="
+            terragrunt --working-dir "$base/$name" init -input=false -no-color
+            terragrunt --working-dir "$base/$name" plan -input=false -no-color
+          done
+
+      - name: Notice — optional plan not configured
+        if: steps.gate.outputs.run_aws_plan != 'true'
+        run: |
+          echo "::notice::AWS_PLAN_TEST_ROLE_ARN is not set — skipped Terragrunt plan. This workflow is optional; default CI does not use OIDC or this secret."
+
+      - name: Notice — AWS login failed (still green)
+        if: steps.gate.outputs.run_aws_plan == 'true' && steps.aws.outcome != 'success'
+        run: |
+          echo "::notice::AWS OIDC/login failed (trust policy, role ARN, or permissions). Job left successful; fix IAM/OIDC to run Terragrunt plans."
