@@ -85,7 +85,7 @@ log_ansible_action() {
 
 run_tg_apply_preflight() {
   local stack_dir="$1"
-  # Preflight self-management remediation should be non-interactive so plan/check/configure
+  # Preflight self-management remediation should be non-interactive so plan/apply/configure
   # can run end-to-end without extra prompts.
   run_tg "$stack_dir" init -reconfigure
   TG_DOWNLOAD_DIR="$TG_DOWNLOAD_DIR" TG_BACKEND_BOOTSTRAP=true TG_NO_AUTO_INIT=true terragrunt --working-dir "$stack_dir" apply -auto-approve

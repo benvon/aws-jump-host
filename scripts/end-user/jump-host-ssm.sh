@@ -215,7 +215,6 @@ pick_instance_id() {
   fi
   if [[ ${#ids[@]} -gt 1 ]]; then
     echo "Multiple jump hosts match; choose one with --instance-id or narrow --tag / --name-contains:" >&2
-    name_contains=""
     cmd_list >&2
     exit 2
   fi

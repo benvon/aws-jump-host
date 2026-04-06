@@ -18,7 +18,11 @@ locals {
   ssm_transfer_object_arns = [
     for pattern in var.ssm_transfer_key_patterns : "${aws_s3_bucket.state.arn}/${pattern}"
   ]
-  ssm_transfer_principals = var.ssm_transfer_principal_arns
+  ssm_transfer_principals    = var.ssm_transfer_principal_arns
+  ssm_transfer_account_ids = distinct([
+    for arn in var.ssm_transfer_principal_arns : regex("arn:aws[a-z-]*:iam::([0-9]{12}):", arn)[0]
+    if can(regex("arn:aws[a-z-]*:iam::([0-9]{12}):", arn))
+  ])
   ssm_transfer_key_prefixes = [
     for pattern in var.ssm_transfer_key_patterns : split("/", pattern)[0]
   ]
@@ -271,4 +275,14 @@ data "aws_iam_policy_document" "state_tls_only" {
 resource "aws_s3_bucket_policy" "state" {
   bucket = aws_s3_bucket.state.id
   policy = data.aws_iam_policy_document.state_tls_only.json
+
+  lifecycle {
+    precondition {
+      condition = (
+        !var.enable_in_account_ssm_transfer_access ||
+        alltrue([for acct in local.ssm_transfer_account_ids : acct == data.aws_caller_identity.current.account_id])
+      )
+      error_message = "All ssm_transfer_principal_arns must belong to the current AWS account (${data.aws_caller_identity.current.account_id}). Cross-account principals are not allowed for state bucket transfer access."
+    }
+  }
 }
