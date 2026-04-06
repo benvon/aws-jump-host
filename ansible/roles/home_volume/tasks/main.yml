@@ -28,6 +28,14 @@
   changed_when: false
   failed_when: false
 
+- name: Ensure home volume marker directory exists
+  ansible.builtin.file:
+    path: /var/lib/home_volume
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
 - name: Check for existing home volume format marker
   ansible.builtin.stat:
     path: "/var/lib/home_volume/marker_{{ home_volume_device | regex_replace('[^A-Za-z0-9]', '_') }}"
@@ -73,3 +81,17 @@
     cmd: "mount {{ home_volume_mount_path }}"
   when: home_volume_mountpoint.rc != 0
   changed_when: true
+
+- name: Read ec2-user passwd entry
+  ansible.builtin.getent:
+    database: passwd
+    key: ec2-user
+
+- name: Ensure ec2-user home exists on mounted home volume
+  ansible.builtin.file:
+    path: /home/ec2-user
+    state: directory
+    owner: ec2-user
+    group: ec2-user
+    mode: "0750"
+  when: "'ec2-user' in ansible_facts.getent_passwd"

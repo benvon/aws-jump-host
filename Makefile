@@ -11,7 +11,7 @@ ANSIBLE_LINT_PATHS ?= ansible/playbooks ansible/roles ansible/group_vars ansible
 YAMLLINT_PATHS ?= ansible/playbooks ansible/roles ansible/group_vars ansible/requirements.yml ansible/vars-schema.example.yml
 TG_DOWNLOAD_DIR ?= $(abspath .cache/terragrunt)
 
-.PHONY: help install-tools fmt fmt-check lint validate check shell-test policy-test contract-test ansible-test test plan-example apply-example apply-example-auto configure-example destroy-example destroy-example-auto
+.PHONY: help install-tools fmt fmt-check lint validate check ci-validate-local ci-check-local ci-local shell-test policy-test contract-test ansible-test test plan-example apply-example apply-example-auto configure-example destroy-example destroy-example-auto
 
 help:
 	@echo "Targets:"
@@ -21,6 +21,9 @@ help:
 	@echo "  lint          - Run static linters and policy checks"
 	@echo "  validate      - Run terraform, terragrunt, and ansible validation"
 	@echo "  check         - Run fmt-check + lint + validate (+ optional preflight)"
+	@echo "  ci-validate-local - Run the same steps as .github/workflows/validate.yml"
+	@echo "  ci-check-local    - Run the same steps as .github/workflows/check.yml"
+	@echo "  ci-local          - Run ci-validate-local then ci-check-local"
 	@echo "  shell-test    - Bats tests for scripts (requires bats-core on PATH)"
 	@echo "  policy-test   - Validate IAM policy template invariants (jq)"
 	@echo "  contract-test - Repo contract checks (log group naming, tool pins, deprecated vars)"
@@ -91,6 +94,19 @@ check: install-tools fmt-check lint validate
 			--region "$${AWS_REGION:?AWS_REGION is required when SKIP_PREFLIGHT is false}" \
 			--expected-log-group "$${EXPECTED_LOG_GROUP:?EXPECTED_LOG_GROUP is required when SKIP_PREFLIGHT is false}"; \
 	fi
+
+# Mirrors .github/workflows/validate.yml
+ci-validate-local:
+	$(MAKE) fmt-check
+	$(MAKE) lint
+	$(MAKE) validate
+
+# Mirrors .github/workflows/check.yml
+ci-check-local:
+	SKIP_PREFLIGHT=true $(MAKE) check
+	$(MAKE) test
+
+ci-local: ci-validate-local ci-check-local
 
 shell-test:
 	@command -v bats >/dev/null 2>&1 || { echo "bats not found; install bats-core (e.g. apt install bats or brew install bats-core)" >&2; exit 1; }

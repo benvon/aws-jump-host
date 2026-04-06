@@ -12,8 +12,8 @@ This directory contains reference-only Terragrunt configurations.
 
 `<env>/<subenv>/<region>/<stack>` where stack is one of:
 
-- `bootstrap-state`
 - `observability`
+- `ssm-self-management` (optional; in-account Session Manager setting management)
 - `vpc-endpoints`
 - `jump-hosts`
 

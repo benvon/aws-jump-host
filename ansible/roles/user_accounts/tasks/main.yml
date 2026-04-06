@@ -36,7 +36,7 @@
     user_accounts_managed_local_users: "{{ user_accounts_managed_local_users + [item.key] }}"
   loop: "{{ ansible_facts.getent_passwd | dict2items }}"
   when:
-    - (item.value[1] | int) >= user_accounts_managed_user_uid_min
+    - (item.value[1] | int) >= (user_accounts_managed_user_uid_min | int)
     - item.key not in user_accounts_managed_user_exclusions
 
 - name: Determine undeclared users to disable
@@ -47,6 +47,23 @@
   ansible.builtin.group:
     name: wheel
     state: present
+
+- name: Ensure declared supplemental groups exist
+  ansible.builtin.group:
+    name: "{{ item }}"
+    state: present
+  loop: >-
+    {{
+      user_accounts_users
+      | map(attribute='groups')
+      | list
+      | flatten
+      | map('string')
+      | map('trim')
+      | reject('equalto', '')
+      | unique
+      | list
+    }}
 
 - name: Validate restricted admin sudo has a non-empty command list
   ansible.builtin.assert:

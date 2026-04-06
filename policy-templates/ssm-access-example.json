@@ -12,7 +12,8 @@
       "Condition": {
         "StringEquals": {
           "ssm:resourceTag/JumpHost": "true",
-          "ssm:resourceTag/AccessProfile": "${aws:PrincipalTag/AccessProfile}"
+          "ssm:resourceTag/AccessProfile": "${aws:PrincipalTag/AccessProfile}",
+          "aws:PrincipalTag/SSMSessionRunAs": "<linux_username>"
         }
       }
     },

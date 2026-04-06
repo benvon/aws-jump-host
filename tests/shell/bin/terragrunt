@@ -11,12 +11,22 @@ args=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --working-dir) shift 2 ;;
+    --no-auto-init) shift ;;
+    --backend-bootstrap) shift ;;
     *) args+=("$1"); shift ;;
   esac
 done
 set -- "${args[@]}"
 
 scenario="${FAKE_TG_SCENARIO:-hosts_ok}"
+
+# Normalize "terragrunt run --backend-bootstrap -- <cmd ...>" to "<cmd ...>".
+if [[ "${1:-}" == run ]]; then
+  shift
+fi
+if [[ "${1:-}" == -- ]]; then
+  shift
+fi
 
 if [[ "${1:-}" == output && "${2:-}" == -json ]]; then
   if [[ "${3:-}" == hosts ]]; then

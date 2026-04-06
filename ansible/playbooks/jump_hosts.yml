@@ -3,7 +3,7 @@
   hosts: jump_hosts
   gather_facts: true
   become: true
-  connection: aws_ssm
+  connection: amazon.aws.aws_ssm
   vars:
     ansible_aws_ssm_region: "{{ lookup('env', 'AWS_REGION') | default('us-east-1', true) }}"
 

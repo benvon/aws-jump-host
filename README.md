@@ -4,7 +4,7 @@ Turn-key solution for deploying and managing private AWS jump hosts through AWS 
 
 ## What This Provides
 
-- Terraform modules for jump hosts, VPC endpoints, observability, and remote state bucket provisioning.
+- Terraform modules for jump hosts, VPC endpoints, observability, Session Manager settings, and remote state bucket provisioning.
 - Terragrunt orchestration for multi-environment structures (`env/subenv/region`).
 - Ansible roles/playbooks for declarative host hardening and user provisioning over SSM.
 - Shell orchestration for `init|plan|apply|check|destroy` workflows.
@@ -32,6 +32,9 @@ Turn-key solution for deploying and managing private AWS jump hosts through AWS 
 - `make lint`
 - `make validate`
 - `make check`
+- `make ci-validate-local` (mirrors `.github/workflows/validate.yml`)
+- `make ci-check-local` (mirrors `.github/workflows/check.yml`)
+- `make ci-local` (runs both workflow-equivalent targets)
 
 ## Example Orchestration
 
@@ -47,3 +50,5 @@ Run `plan` from the repository root (paths to scripts and generated inventory ar
 ```
 
 `apply` and `destroy` run Terraform interactively by default. Add `--auto-approve` for non-interactive use, or use `make apply-example-auto` / `make destroy-example-auto`.
+
+If your organization does not centrally manage Session Manager preferences yet, add `--ssm-self-management` to have preflight apply the optional `ssm-self-management` stack before validation.

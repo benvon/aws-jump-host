@@ -1,15 +1,16 @@
 variable "hosts" {
   description = "Map of jump host definitions keyed by logical host name."
   type = map(object({
-    vpc_id              = string
-    subnet_id           = string
-    security_group_ids  = optional(list(string), [])
-    instance_type       = optional(string, "t3.micro")
-    ami_id              = optional(string)
-    access_profile      = string
-    root_volume_size_gb = optional(number, 20)
-    home_volume_size_gb = optional(number, 20)
-    tags                = optional(map(string), {})
+    vpc_id                 = string
+    subnet_id              = string
+    security_group_ids     = optional(list(string), [])
+    instance_type          = optional(string, "t3.micro")
+    ami_id                 = optional(string)
+    ami_ssm_parameter_name = optional(string)
+    access_profile         = string
+    root_volume_size_gb    = optional(number, 20)
+    home_volume_size_gb    = optional(number, 20)
+    tags                   = optional(map(string), {})
   }))
 }
 

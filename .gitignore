@@ -55,3 +55,4 @@ local_code_review.md
 
 .env
 .envrc
+.cache/

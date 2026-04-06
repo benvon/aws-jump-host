@@ -10,10 +10,22 @@ terraform {
 }
 
 data "aws_caller_identity" "current" {}
+data "aws_partition" "current" {}
 
 locals {
   effective_access_log_bucket_name = coalesce(var.access_log_bucket_name, "${var.state_bucket_name}-access-logs")
   effective_access_log_prefix      = trim(var.access_log_prefix, "/")
+  ssm_transfer_object_arns = [
+    for pattern in var.ssm_transfer_key_patterns : "${aws_s3_bucket.state.arn}/${pattern}"
+  ]
+  ssm_transfer_principals = var.ssm_transfer_principal_arns
+  ssm_transfer_account_ids = distinct([
+    for arn in var.ssm_transfer_principal_arns : regex("arn:aws[a-z-]*:iam::([0-9]{12}):", arn)[0]
+    if can(regex("arn:aws[a-z-]*:iam::([0-9]{12}):", arn))
+  ])
+  ssm_transfer_key_prefixes = [
+    for pattern in var.ssm_transfer_key_patterns : split("/", pattern)[0]
+  ]
 }
 
 resource "aws_s3_bucket" "access_logs" { #tfsec:ignore:aws-s3-enable-bucket-logging This bucket is the dedicated destination for S3 access logs. Logging it would cause recursive log chains. #tfsec:ignore:aws-s3-enable-versioning Versioning is configured via standalone aws_s3_bucket_versioning.
@@ -189,6 +201,53 @@ resource "aws_s3_bucket_logging" "state" {
 }
 
 data "aws_iam_policy_document" "state_tls_only" {
+  dynamic "statement" {
+    for_each = var.enable_in_account_ssm_transfer_access ? [1] : []
+    content {
+      sid    = "AllowInAccountSsmTransferBucketDiscovery"
+      effect = "Allow"
+
+      actions = [
+        "s3:GetBucketLocation",
+        "s3:ListBucket",
+      ]
+
+      principals {
+        type        = "AWS"
+        identifiers = local.ssm_transfer_principals
+      }
+
+      resources = [aws_s3_bucket.state.arn]
+
+      condition {
+        test     = "StringLikeIfExists"
+        variable = "s3:prefix"
+        values   = local.ssm_transfer_key_prefixes
+      }
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_in_account_ssm_transfer_access ? [1] : []
+    content {
+      sid    = "AllowInAccountSsmTransferObjectOps"
+      effect = "Allow"
+
+      actions = [
+        "s3:DeleteObject",
+        "s3:GetObject",
+        "s3:PutObject",
+      ]
+
+      principals {
+        type        = "AWS"
+        identifiers = local.ssm_transfer_principals
+      }
+
+      resources = local.ssm_transfer_object_arns
+    }
+  }
+
   statement {
     sid    = "DenyInsecureTransport"
     effect = "Deny"
@@ -216,4 +275,14 @@ data "aws_iam_policy_document" "state_tls_only" {
 resource "aws_s3_bucket_policy" "state" {
   bucket = aws_s3_bucket.state.id
   policy = data.aws_iam_policy_document.state_tls_only.json
+
+  lifecycle {
+    precondition {
+      condition = (
+        !var.enable_in_account_ssm_transfer_access ||
+        alltrue([for acct in local.ssm_transfer_account_ids : acct == data.aws_caller_identity.current.account_id])
+      )
+      error_message = "All ssm_transfer_principal_arns must belong to the current AWS account (${data.aws_caller_identity.current.account_id}). Cross-account principals are not allowed for state bucket transfer access."
+    }
+  }
 }

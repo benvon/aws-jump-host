@@ -6,6 +6,10 @@
 # user_accounts_admin_sudo_commands: [ '/usr/bin/somecmd', ... ] (see ansible/roles/user_accounts/defaults/main.yml).
 users:
   - username: jumpops
+    access_profile: ops
+    # Optional: allowlist IAM roles that may start SSM sessions as this Linux user.
+    iam_role_arns:
+      - arn:aws:iam::123456789012:role/AWSReservedSSO_jumpops-access_aaaaaaaaaaaaaaaa
     groups:
       - ops
     sudo_profile: ops
@@ -15,6 +19,9 @@ users:
 
   # Example only: admin = full root on the bastion. Prefer ops profile + break-glass admin only if required.
   - username: platform-admin
+    access_profile: ops
+    iam_role_arns:
+      - arn:aws:iam::123456789012:role/AWSReservedSSO_platform-admin-access_bbbbbbbbbbbbbbbb
     groups:
       - platform
     sudo_profile: admin

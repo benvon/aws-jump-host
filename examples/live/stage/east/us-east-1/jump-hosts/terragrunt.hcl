@@ -7,12 +7,8 @@ locals {
   region_config = read_terragrunt_config(find_in_parent_folders("region.hcl"))
 }
 
-dependency "observability" {
-  config_path = "../observability"
-}
-
-dependency "vpc_endpoints" {
-  config_path = "../vpc-endpoints"
+dependencies {
+  paths = ["../observability", "../vpc-endpoints"]
 }
 
 terraform {

@@ -14,7 +14,7 @@ terraform {
 inputs = {
   vpc_id             = local.region_config.locals.vpc_id
   subnet_ids         = local.region_config.locals.endpoint_subnet_ids
-  security_group_ids = local.region_config.locals.endpoint_security_group_ids
+  security_group_ids = lookup(local.region_config.locals, "endpoint_security_group_ids", [])
   tags = merge(include.root.locals.common_tags, {
     Component = "vpc-endpoints"
   })
