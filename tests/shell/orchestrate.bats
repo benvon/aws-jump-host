@@ -49,3 +49,19 @@ load helper
   [[ "$status" -ne 0 ]]
   rm -f "$log"
 }
+
+@test "orchestrate init includes ssm-self-management stack when enabled" {
+  export FAKE_TG_SCENARIO=hosts_ok
+  local log
+  log="$(mktemp)"
+  export FAKE_TG_LOG="$log"
+  run ./scripts/orchestrate.sh init \
+    --live-dir ./examples/live \
+    --env dev \
+    --subenv east \
+    --region us-east-1 \
+    --ssm-self-management
+  [[ "$status" -eq 0 ]]
+  grep -q -- 'ssm-self-management' "$log"
+  rm -f "$log"
+}

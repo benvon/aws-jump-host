@@ -10,6 +10,9 @@ Creates an encrypted, versioned S3 bucket for Terraform state and enables server
 - `access_log_prefix` (string, default `s3-access-logs`)
 - `access_log_retention_days` (number, default `365`)
 - `force_destroy` (bool, default `false`)
+- `enable_in_account_ssm_transfer_access` (bool, default `false`): adds in-account S3 policy allows used by Ansible `amazon.aws.aws_ssm`.
+- `ssm_transfer_key_patterns` (list(string), default `["i-*/*","mi-*/*"]`): object-key globs allowed for SSM transfer operations.
+- `ssm_transfer_principal_arns` (list(string), default `[]`): explicit IAM principal ARNs allowed for SSM transfer operations when `enable_in_account_ssm_transfer_access=true`.
 - `tags` (map(string))
 
 ## Outputs

@@ -17,6 +17,20 @@ This platform already handles:
 
 Security/IAM teams are responsible for identity, IAM authorization, and Session Manager account settings.
 
+If central management is not available yet, this repository can temporarily self-manage the required Session Manager settings via Terraform/Terragrunt (`ssm-self-management` stack) using `scripts/orchestrate.sh --ssm-self-management`.
+
+The same `ssm-self-management` stack can also self-manage a role allowlist by attaching inline IAM policies to explicitly listed IAM role ARNs.
+For `AWSReservedSSO_*` roles, direct IAM mutation is blocked; use the stack's generated policy document output and apply it in the IAM Identity Center Permission Set instead.
+
+Helper to export generated policy JSON for a role ARN:
+
+```bash
+./scripts/export_ssm_allowlist_policy.sh \
+  --terragrunt-dir live/<env>/<subenv>/<region>/ssm-self-management \
+  --role-arn <iam-role-arn> \
+  --output /tmp/ssm-allowlist-policy.json
+```
+
 ## Required IAM Role Permissions
 
 The operator role must allow:
@@ -70,14 +84,15 @@ Notes:
 
 - `SSMSessionRunAs` value must match an existing Linux user on the host.
 - Linux users are provisioned by this platform's Ansible workflow.
+- If you use this repo's `ssm-self-management` allowlist (`session_access_role_mappings`), the inline policy can enforce both principal tags automatically at session start-time.
 
-## Required Session Manager Service Settings
+## Required Session Manager Preferences
 
 Per account and region:
 
-- `/ssm/sessionmanager/enableRunAs = true`
-- `/ssm/sessionmanager/enableCloudWatchLogging = true`
-- `/ssm/sessionmanager/cloudWatchLogGroupName = /aws/ssm/jump-host/<env>/<subenv>/<region>`
+- Session document `SSM-SessionManagerRunShell` must exist
+- `inputs.runAsEnabled = true`
+- `inputs.cloudWatchLogGroupName = /aws/ssm/jump-host/<env>/<subenv>/<region>`
 
 This repo validates these settings with:
 
@@ -85,12 +100,18 @@ This repo validates these settings with:
 scripts/preflight_ssm_compliance.sh --region <region> --expected-log-group <name>
 ```
 
+To self-manage these settings in-account, use:
+
+```bash
+scripts/orchestrate.sh <init|plan|apply|configure|check> ... --ssm-self-management
+```
+
 ## Security Team Validation Checklist
 
 1. IAM role has required SSM/EC2 actions.
 2. IAM role has `AccessProfile` tag and `SSMSessionRunAs` tag.
 3. ABAC conditions restrict access to tagged jump hosts.
-4. Session Manager service settings are configured for the target region/account.
+4. Session Manager preferences document is configured for the target region/account.
 5. Test `start-session` as an allowed role and a denied role.
 
 ## AWS References

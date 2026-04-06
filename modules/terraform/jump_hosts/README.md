@@ -5,6 +5,10 @@ Provisions private EC2 jump hosts with IMDSv2-only metadata configuration, least
 ## Inputs
 
 - `hosts` (map object): host definitions keyed by host name.
+  - Per host, set one of:
+    - `ami_id`: explicit pinned AMI ID.
+    - `ami_ssm_parameter_name`: SSM parameter name that resolves to the latest AMI at apply time (for example `/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64`).
+  - If neither is set, the module falls back to latest AL2023 x86_64.
 - `name_prefix` (string): default `jump-host`.
 - `common_tags` (map(string)): tags applied to all resources.
 - `volume_kms_key_id` (string|null): optional KMS key for EBS encryption.

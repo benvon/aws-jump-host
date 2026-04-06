@@ -9,7 +9,7 @@ terraform {
   }
 }
 
-data "aws_ssm_parameter" "al2023_ami" {
+data "aws_ssm_parameter" "al2023_ami_x86_64" {
   name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
 }
 
@@ -23,11 +23,12 @@ data "aws_subnet" "host" {
 locals {
   normalized_hosts = {
     for host_name, host in var.hosts : host_name => merge(host, {
-      security_group_ids  = try(host.security_group_ids, [])
-      instance_type       = try(host.instance_type, "t3.micro")
-      root_volume_size_gb = try(host.root_volume_size_gb, 20)
-      home_volume_size_gb = try(host.home_volume_size_gb, 20)
-      tags                = try(host.tags, {})
+      security_group_ids     = try(host.security_group_ids, [])
+      instance_type          = try(host.instance_type, "t3.micro")
+      ami_ssm_parameter_name = try(host.ami_ssm_parameter_name, null)
+      root_volume_size_gb    = try(host.root_volume_size_gb, 20)
+      home_volume_size_gb    = try(host.home_volume_size_gb, 20)
+      tags                   = try(host.tags, {})
     })
   }
 
@@ -35,6 +36,15 @@ locals {
     for host_name, host in local.normalized_hosts : host_name => host
     if length(host.security_group_ids) == 0
   }
+}
+
+data "aws_ssm_parameter" "host_ami" {
+  for_each = {
+    for host_name, host in local.normalized_hosts : host_name => host.ami_ssm_parameter_name
+    if try(host.ami_id, null) == null && try(host.ami_ssm_parameter_name, null) != null
+  }
+
+  name = each.value
 }
 
 # Look up the VPC for every host that will receive a module-created default security group.
@@ -157,6 +167,8 @@ resource "aws_iam_instance_profile" "instance" {
 }
 
 resource "aws_security_group" "default" {
+  # tfsec:ignore:aws-ec2-no-public-egress-sgr Accepted risk: when restrict_egress=false, outbound HTTPS to 0.0.0.0/0 is allowed for AWS API reachability; callers can set restrict_egress=true for stricter egress controls.
+  #checkov:skip=CKV_AWS_382:Accepted risk: when restrict_egress=false, outbound HTTPS to 0.0.0.0/0 is allowed for AWS API reachability; callers can set restrict_egress=true.
   for_each = local.default_sg_hosts
 
   name_prefix = "${var.name_prefix}-${each.key}-"
@@ -182,7 +194,7 @@ resource "aws_security_group" "default" {
 resource "aws_instance" "host" {
   for_each = local.normalized_hosts
 
-  ami                         = coalesce(try(each.value.ami_id, null), data.aws_ssm_parameter.al2023_ami.value)
+  ami                         = coalesce(try(each.value.ami_id, null), try(data.aws_ssm_parameter.host_ami[each.key].value, null), data.aws_ssm_parameter.al2023_ami_x86_64.value)
   instance_type               = each.value.instance_type
   subnet_id                   = each.value.subnet_id
   vpc_security_group_ids      = length(each.value.security_group_ids) > 0 ? each.value.security_group_ids : [aws_security_group.default[each.key].id]

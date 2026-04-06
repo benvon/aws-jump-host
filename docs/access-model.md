@@ -6,11 +6,16 @@ Primary handoff document for prerequisite ownership and setup:
 
 ## Responsibility Split
 
-External platform/IAM team owns:
+External platform/IAM team normally owns:
 
 - IAM Identity Center groups and assignments
 - Session Manager account-level preferences
 - Permission boundaries/organization guardrails
+
+Optional fallback when central management is unavailable:
+
+- This repository can manage Session Manager preferences with the per-region `ssm-self-management` stack and `--ssm-self-management` orchestrator flag.
+- The same stack can also attach inline allowlist policies to explicitly declared IAM roles for Session Manager access.
 
 This repository owns:
 
@@ -32,9 +37,11 @@ Central IAM policies can require principals to match host `AccessProfile` and re
 
 Before `plan`/`apply`, preflight validates:
 
-- `/ssm/sessionmanager/enableRunAs=true`
-- `/ssm/sessionmanager/enableCloudWatchLogging=true`
-- `/ssm/sessionmanager/cloudWatchLogGroupName` matches expected log group path
+- Session preferences document `SSM-SessionManagerRunShell` exists
+- `inputs.runAsEnabled=true`
+- `inputs.cloudWatchLogGroupName` matches expected log group path
+
+With `--ssm-self-management`, orchestrator applies the `ssm-self-management` stack before preflight so these settings are managed in-account and separately state-scoped.
 
 ## Example IAM Policy Artifacts
 
@@ -42,4 +49,6 @@ See `policy-templates/ssm-access-example.json` for a starter pattern that centra
 
 ## Notes on Run As
 
-Run As restrictions are not configured by this repository. To enforce principal-to-RunAs mapping, use centralized IAM policies and Session Manager preference constraints in the access-management account.
+When role allowlist mappings are configured in `ssm-self-management`, this repository can enforce `aws:PrincipalTag/SSMSessionRunAs` and `aws:PrincipalTag/AccessProfile` in per-role inline policies.
+
+The principal tag values still must be supplied by your identity/federation model (role tags and/or session tags).

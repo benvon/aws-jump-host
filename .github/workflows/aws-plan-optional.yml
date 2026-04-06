@@ -50,7 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           base="examples/live/dev/east/us-east-1"
-          for name in bootstrap-state observability vpc-endpoints jump-hosts; do
+          for name in observability vpc-endpoints jump-hosts; do
             echo "=== $base/$name ==="
             terragrunt --working-dir "$base/$name" init -input=false -no-color
             terragrunt --working-dir "$base/$name" plan -input=false -no-color

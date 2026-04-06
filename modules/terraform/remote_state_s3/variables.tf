@@ -33,6 +33,32 @@ variable "force_destroy" {
   default     = false
 }
 
+variable "enable_in_account_ssm_transfer_access" {
+  description = "When true, add state-bucket policy statements so explicitly allowed in-account principals can list the bucket and transfer objects for Ansible SSM."
+  type        = bool
+  default     = false
+}
+
+variable "ssm_transfer_key_patterns" {
+  description = "Object-key glob patterns allowed for in-account SSM transfer access."
+  type        = list(string)
+  default = [
+    "i-*/*",
+    "mi-*/*"
+  ]
+}
+
+variable "ssm_transfer_principal_arns" {
+  description = "IAM principal ARNs (role/user) permitted to perform in-account SSM transfer operations on the state bucket."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = !var.enable_in_account_ssm_transfer_access || length(var.ssm_transfer_principal_arns) > 0
+    error_message = "When enable_in_account_ssm_transfer_access is true, ssm_transfer_principal_arns must include at least one IAM principal ARN."
+  }
+}
+
 variable "tags" {
   description = "Tags applied to state resources."
   type        = map(string)

@@ -28,6 +28,23 @@ load helper
   rm -f "$out"
 }
 
+@test "render_inventory includes optional connection vars when provided" {
+  export FAKE_TG_SCENARIO=hosts_ok
+  local out
+  out="$(mktemp)"
+  run ./scripts/render_inventory.sh \
+    --terragrunt-dir "$REPO_ROOT/examples/live/dev/east/us-east-1/jump-hosts" \
+    --output "$out" \
+    --connection "amazon.aws.aws_ssm" \
+    --ssm-region "us-east-1" \
+    --ssm-bucket "example-bucket" \
+    --s3-addressing-style "virtual"
+  [[ "$status" -eq 0 ]]
+  run jq -e '.all.children.jump_hosts.vars.ansible_connection == "amazon.aws.aws_ssm" and .all.children.jump_hosts.vars.ansible_aws_ssm_region == "us-east-1" and .all.children.jump_hosts.vars.ansible_aws_ssm_bucket_name == "example-bucket" and .all.children.jump_hosts.vars.ansible_aws_ssm_s3_addressing_style == "virtual"' "$out"
+  [[ "$status" -eq 0 ]]
+  rm -f "$out"
+}
+
 @test "render_inventory uses empty inventory when state is empty" {
   export FAKE_TG_SCENARIO=empty_state
   local out

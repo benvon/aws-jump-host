@@ -10,10 +10,18 @@ terraform {
 }
 
 data "aws_caller_identity" "current" {}
+data "aws_partition" "current" {}
 
 locals {
   effective_access_log_bucket_name = coalesce(var.access_log_bucket_name, "${var.state_bucket_name}-access-logs")
   effective_access_log_prefix      = trim(var.access_log_prefix, "/")
+  ssm_transfer_object_arns = [
+    for pattern in var.ssm_transfer_key_patterns : "${aws_s3_bucket.state.arn}/${pattern}"
+  ]
+  ssm_transfer_principals = var.ssm_transfer_principal_arns
+  ssm_transfer_key_prefixes = [
+    for pattern in var.ssm_transfer_key_patterns : split("/", pattern)[0]
+  ]
 }
 
 resource "aws_s3_bucket" "access_logs" { #tfsec:ignore:aws-s3-enable-bucket-logging This bucket is the dedicated destination for S3 access logs. Logging it would cause recursive log chains. #tfsec:ignore:aws-s3-enable-versioning Versioning is configured via standalone aws_s3_bucket_versioning.
@@ -189,6 +197,53 @@ resource "aws_s3_bucket_logging" "state" {
 }
 
 data "aws_iam_policy_document" "state_tls_only" {
+  dynamic "statement" {
+    for_each = var.enable_in_account_ssm_transfer_access ? [1] : []
+    content {
+      sid    = "AllowInAccountSsmTransferBucketDiscovery"
+      effect = "Allow"
+
+      actions = [
+        "s3:GetBucketLocation",
+        "s3:ListBucket",
+      ]
+
+      principals {
+        type        = "AWS"
+        identifiers = local.ssm_transfer_principals
+      }
+
+      resources = [aws_s3_bucket.state.arn]
+
+      condition {
+        test     = "StringLikeIfExists"
+        variable = "s3:prefix"
+        values   = local.ssm_transfer_key_prefixes
+      }
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_in_account_ssm_transfer_access ? [1] : []
+    content {
+      sid    = "AllowInAccountSsmTransferObjectOps"
+      effect = "Allow"
+
+      actions = [
+        "s3:DeleteObject",
+        "s3:GetObject",
+        "s3:PutObject",
+      ]
+
+      principals {
+        type        = "AWS"
+        identifiers = local.ssm_transfer_principals
+      }
+
+      resources = local.ssm_transfer_object_arns
+    }
+  }
+
   statement {
     sid    = "DenyInsecureTransport"
     effect = "Deny"

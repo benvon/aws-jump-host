@@ -8,9 +8,15 @@ locals {
   subenv           = local.subenv_config.locals.subenv
   aws_region       = local.region_config.locals.aws_region
   account_id       = local.account_config.locals.account_id
-  assume_role_name = local.account_config.locals.assume_role_name
+  assume_role_name = lookup(local.account_config.locals, "assume_role_name", "")
   state_bucket     = local.account_config.locals.state_bucket
-  is_bootstrap     = basename(get_terragrunt_dir()) == "bootstrap-state"
+
+  # Optional assume_role provider fragment; empty when credentials already target the account directly.
+  assume_role_fragment = local.assume_role_name != "" ? format(
+    "  assume_role {\n    role_arn = \"arn:aws:iam::%s:role/%s\"\n  }\n\n",
+    local.account_id,
+    local.assume_role_name
+  ) : ""
 
   # Base tags + optional extra_tags from live hierarchy (account → env → subenv; later wins on duplicate keys).
   # The generated AWS provider uses default_tags with this map so taggable resources inherit it automatically;
@@ -32,8 +38,7 @@ locals {
 terraform_version_constraint = "~> 1.10"
 
 remote_state {
-  backend      = "s3"
-  disable_init = local.is_bootstrap
+  backend = "s3"
 
   generate = {
     path      = "backend.tf"
@@ -41,8 +46,10 @@ remote_state {
   }
 
   config = {
-    bucket       = local.state_bucket
-    key          = "${path_relative_to_include()}/terraform.tfstate"
+    bucket = local.state_bucket
+    # Include hierarchy may live outside the environment tree; strip "../" so S3 object
+    # keys are always valid and deterministic.
+    key          = "${replace(path_relative_to_include(), "../", "")}/terraform.tfstate"
     region       = local.aws_region
     encrypt      = true
     use_lockfile = true
@@ -56,9 +63,7 @@ generate "provider" {
 provider "aws" {
   region = "${local.aws_region}"
 
-  assume_role {
-    role_arn = "arn:aws:iam::${local.account_id}:role/${local.assume_role_name}"
-  }
+${local.assume_role_fragment}
 
   default_tags {
     tags = ${jsonencode(local.common_tags)}
