@@ -18,7 +18,7 @@ locals {
   ssm_transfer_object_arns = [
     for pattern in var.ssm_transfer_key_patterns : "${aws_s3_bucket.state.arn}/${pattern}"
   ]
-  ssm_transfer_principals    = var.ssm_transfer_principal_arns
+  ssm_transfer_principals = var.ssm_transfer_principal_arns
   ssm_transfer_account_ids = distinct([
     for arn in var.ssm_transfer_principal_arns : regex("arn:aws[a-z-]*:iam::([0-9]{12}):", arn)[0]
     if can(regex("arn:aws[a-z-]*:iam::([0-9]{12}):", arn))
