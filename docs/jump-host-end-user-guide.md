@@ -93,6 +93,17 @@ For the standard **Standard_Stream** shell Session document, AWS validates `inpu
 
 Optional: `jump-host-ssm.sh connect --document-name <name>` if you use a **different** Session document type (not for arbitrary Run As on the default shell document).
 
+### Shell startup, working directory, and prompt
+
+The Session Manager preferences document sets a **short** `inputs.shellProfile.linux` that **`cd`s to your home directory** and **`exec`s interactive bash** (`bash -i`). That matches how Amazon Linux 2023 loads **`/etc/bashrc`**, which in turn sources **`/etc/profile.d/*.sh`**—including the managed environment segment for **`PS1`** in **`/etc/profile.d/zzz-jump-host-prompt.sh`** (installed by Ansible; the `zzz-` prefix makes it run after other `profile.d` snippets that set `PS1`). Your client may print that profile line once when the session starts; that is normal. The prompt label is resolved in order: **`JUMP_HOST_ENVIRONMENT`** if you set it, then **`/etc/jump-host-environment`** (written at configure time from **`--env`** / **`JUMP_HOST_ENVIRONMENT`**, or from the instance’s **`Environment` EC2 tag** when those were not passed), then the **IMDS** tag path when instance metadata tags are enabled on the instance. Settings in your own **`~/.bashrc`** or **`~/.bash_profile`** run later and **override** `PS1` if you customize it. To turn off the managed segment without changing your dotfiles, use either of the following:
+
+- Create an empty file `~/.jump-host-disable-prompt`, or
+- Set `export JUMP_HOST_DISABLE_PROMPT=1` before the prompt snippet runs (for example early in `~/.bash_profile`).
+
+### Persistent home directories
+
+Each jump host uses a **dedicated EBS volume** mounted at **`/home`**. After the host has been configured with Ansible at least once, user home directories under `/home/...` live on that volume, so they **survive instance replacement** as long as the same Terraform-managed volume is reattached. **Before** the first successful configure/apply, `/home` may still be on the instance root disk—avoid relying on persistence until provisioning has completed.
+
 ### Tags you can rely on
 
 Jump hosts from this platform are tagged consistently:
@@ -172,6 +183,7 @@ Use the instance id in the first column with `aws ssm start-session --target`. (
 | `AccessDeniedException` on `start-session` | IAM: role needs SSM permissions and ABAC/tag conditions must match the instance (`JumpHost`, `AccessProfile`). See `docs/security-user-prerequisites.md`. |
 | SSM connects but wrong Linux user | Run As is set by IAM tag `SSMSessionRunAs` (or IdP session tags) or the account default in Session Manager preferences—not via a CLI flag on the standard shell document. |
 | Script lists no hosts | Wrong account, region, or tags; confirm `JumpHost=true` and instance is **running**. |
+| SSM or **Ansible** (`aws_ssm`) sessions drop or hang after editing `shellProfile.linux` | `terraform apply` the `ssm-self-management` stack to restore the repo default (`cd $HOME; exec bash -i`), or set `linux_shell_profile = ""` in that stack for stock `/bin/sh` while troubleshooting. |
 
 ---
 

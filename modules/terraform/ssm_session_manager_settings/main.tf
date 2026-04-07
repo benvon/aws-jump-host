@@ -37,6 +37,13 @@ locals {
     : "${local.normalized_default_host_management_role_path}/${var.default_host_management_role_name}"
   )
 
+  # cd + interactive bash (no -l): login shells often skip /etc/bashrc → profile.d, so PS1
+  # snippets never run; plain sh also skips them. bash -i sources bashrc → profile.d on AL2023.
+  # Avoid bash -l here — it dropped Standard_Stream sessions in testing.
+  default_linux_shell_profile = "cd \"$${HOME:-/}\"; exec /bin/bash -i"
+
+  linux_shell_profile_effective = var.linux_shell_profile == null ? local.default_linux_shell_profile : var.linux_shell_profile
+
   # Note: inputs.runAsDefaultUser must be a literal string (or empty). AWS
   # rejects template placeholders such as {{runAsDefaultUser}} in Session
   # documents (InvalidDocumentContent). Per-session OS user selection is not
@@ -60,7 +67,7 @@ locals {
       maxSessionDuration          = ""
       shellProfile = {
         windows = ""
-        linux   = ""
+        linux   = local.linux_shell_profile_effective
       }
     }
   }

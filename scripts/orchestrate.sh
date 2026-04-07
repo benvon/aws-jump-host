@@ -321,6 +321,10 @@ run_ansible() {
     --output "$inventory_path"
 
   host_count="$(jq -r '.all.children.jump_hosts.hosts | length' "$inventory_path")"
+  if [[ "$host_count" -eq 0 ]]; then
+    printf "\n==> [ansible/%s] WARNING: inventory has 0 jump hosts — the play is skipped (no roles or tasks run, including session_comfort).\n" "$playbook" >&2
+    printf "    Fix: ensure Terraform apply created instances and terragrunt output 'hosts' is non-empty for %s\n" "$jump_hosts_dir" >&2
+  fi
   if [[ "$host_count" -gt 0 ]]; then
     ssm_transfer_bucket="$(resolve_ssm_transfer_bucket)"
     check_ssm_transfer_bucket_access "$ssm_transfer_bucket"
@@ -345,10 +349,16 @@ run_ansible() {
     extra+=(--extra-vars "@$users_vars")
   fi
 
+  if [[ -n "$env_name" ]]; then
+    extra+=(--extra-vars "jump_host_environment=${env_name}")
+  fi
+
   if [[ "$check_mode" == "true" ]]; then
     extra+=(--check)
   fi
 
+  # Resolve roles_path (ansible/roles) from repo ansible.cfg even if cwd is not REPO_ROOT.
+  ANSIBLE_CONFIG="${REPO_ROOT}/ansible.cfg" \
   AWS_REGION="$aws_region" \
   OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES \
   ansible-playbook \

@@ -1,0 +1,104 @@
+---
+- name: Remove legacy SSM shell shim (Session profile no longer uses it)
+  ansible.builtin.file:
+    path: /usr/local/libexec/jump-host/ssm-login-shim
+    state: absent
+
+- name: Set Helm archive architecture label
+  ansible.builtin.set_fact:
+    session_comfort_helm_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
+
+- name: Install baseline CLI packages
+  ansible.builtin.dnf:
+    name: "{{ session_comfort_base_packages }}"
+    state: present
+
+- name: Install Kubernetes RPM repository for kubectl
+  ansible.builtin.template:
+    src: kubernetes.repo.j2
+    dest: /etc/yum.repos.d/kubernetes-jump-host.repo
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install kubectl
+  ansible.builtin.dnf:
+    name: kubectl
+    state: present
+
+- name: Install Helm from upstream release
+  when: not ansible_check_mode
+  block:
+    - name: Fetch Helm release checksum
+      ansible.builtin.uri:
+        url: "https://get.helm.sh/helm-v{{ session_comfort_helm_version }}-linux-{{ session_comfort_helm_arch }}.tar.gz.sha256"
+        return_content: true
+        status_code: [200]
+      register: session_comfort_helm_checksum_fetch
+
+    - name: Download Helm archive
+      ansible.builtin.get_url:
+        url: "https://get.helm.sh/helm-v{{ session_comfort_helm_version }}-linux-{{ session_comfort_helm_arch }}.tar.gz"
+        dest: "/tmp/helm-v{{ session_comfort_helm_version }}-linux-{{ session_comfort_helm_arch }}.tar.gz"
+        mode: "0644"
+        checksum: "sha256:{{ session_comfort_helm_checksum_fetch.content.split() | first | trim }}"
+
+    - name: Ensure Helm install directory exists
+      ansible.builtin.file:
+        path: "/opt/helm/{{ session_comfort_helm_version }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Unpack Helm distribution
+      ansible.builtin.unarchive:
+        src: "/tmp/helm-v{{ session_comfort_helm_version }}-linux-{{ session_comfort_helm_arch }}.tar.gz"
+        dest: "/opt/helm/{{ session_comfort_helm_version }}"
+        remote_src: true
+        creates: "/opt/helm/{{ session_comfort_helm_version }}/linux-{{ session_comfort_helm_arch }}/helm"
+
+    - name: Install helm binary
+      ansible.builtin.copy:
+        src: "/opt/helm/{{ session_comfort_helm_version }}/linux-{{ session_comfort_helm_arch }}/helm"
+        dest: /usr/local/bin/helm
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0755"
+
+- name: Install jump host profile.d PATH snippet for ~/bin
+  ansible.builtin.copy:
+    src: jump-host-path.sh
+    dest: /etc/profile.d/jump-host-path.sh
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Publish /etc/jump-host-environment when label is known (from --env or EC2 Environment tag)
+  ansible.builtin.copy:
+    content: "{{ jump_host_environment_resolved | trim }}\n"
+    dest: /etc/jump-host-environment
+    owner: root
+    group: root
+    mode: "0644"
+  when: jump_host_environment_resolved | default('') | trim | length > 0
+
+- name: Remove stale /etc/jump-host-environment when label is unknown
+  ansible.builtin.file:
+    path: /etc/jump-host-environment
+    state: absent
+  when: jump_host_environment_resolved | default('') | trim | length == 0
+
+- name: Install jump host profile.d prompt snippet (zzz- prefix runs after other profile.d)
+  ansible.builtin.template:
+    src: jump-host-prompt.sh.j2
+    dest: /etc/profile.d/zzz-jump-host-prompt.sh
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Remove legacy jump-host-prompt.sh if present
+  ansible.builtin.file:
+    path: /etc/profile.d/jump-host-prompt.sh
+    state: absent

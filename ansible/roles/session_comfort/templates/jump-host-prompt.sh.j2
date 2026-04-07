@@ -1,0 +1,36 @@
+# Ansible managed — bash interactive prompt (see docs/jump-host-end-user-guide.md).
+# Installed as zzz-*.sh so it runs after other /etc/profile.d snippets that may set PS1.
+# Label resolution: JUMP_HOST_ENVIRONMENT (user), then /etc/jump-host-environment (configure),
+# then IMDS tags/instance/Environment when instance metadata tags are enabled on the instance.
+_jump_host_environment_label() {
+  local v="${JUMP_HOST_ENVIRONMENT:-}"
+  if [ -z "$v" ] && [ -r /etc/jump-host-environment ]; then
+    v=$(tr -d '\n\r' </etc/jump-host-environment 2>/dev/null || true)
+  fi
+  if [ -z "$v" ]; then
+    local token
+    token=$(curl -fsS --connect-timeout 1 --max-time 2 -X PUT "http://169.254.169.254/latest/api/token" \
+      -H "X-aws-ec2-metadata-token-ttl-seconds: 60" 2>/dev/null) || token=""
+    if [ -n "$token" ]; then
+      v=$(curl -fsS --connect-timeout 1 --max-time 2 -H "X-aws-ec2-metadata-token: $token" \
+        "http://169.254.169.254/latest/meta-data/tags/instance/Environment" 2>/dev/null) || v=""
+    fi
+  fi
+  printf '%s' "$v"
+}
+
+if [ -n "${BASH_VERSION:-}" ]; then
+  cd "${HOME:-/}" 2>/dev/null || true
+  if [ -z "${JUMP_HOST_DISABLE_PROMPT:-}" ] && [ ! -f "${HOME:-}/.jump-host-disable-prompt" ]; then
+    case $- in *i*)
+      _jhe="$(_jump_host_environment_label)"
+      if [ -n "$_jhe" ]; then
+        export JUMP_HOST_ENVIRONMENT="$_jhe"
+        PS1="(\[\e[1;31m\]${JUMP_HOST_ENVIRONMENT}\[\e[0m\]) ${PS1:-\$ }"
+      fi
+      unset -v _jhe
+      ;;
+    esac
+  fi
+fi
+unset -f _jump_host_environment_label 2>/dev/null || true

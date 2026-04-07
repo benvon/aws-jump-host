@@ -10,6 +10,7 @@ Manages AWS Systems Manager Session Manager account-level preferences via the `S
 - `cloudwatch_log_group_name` (string, default `/aws/ssm/session-manager`)
 - `session_data_kms_key_id` (string, default `alias/aws/ssm`; used for `inputs.kmsKeyId` in Session Manager preferences)
 - `run_as_default_user` (string, default `""`; set this when `enable_run_as=true` unless you are using IAM principal tag `SSMSessionRunAs`; must be literal—AWS does not support per-session overrides via `StartSession` parameters for `runAsDefaultUser` in shell Session documents)
+- `linux_shell_profile` (string|null, default `null`): `inputs.shellProfile.linux` for Standard_Stream sessions (POSIX `sh`, max **512** characters). `null` defaults to `cd "$HOME"; exec /bin/bash -i` so sessions land in the Run As user’s home and load **bash** interactively (which pulls in `/etc/bashrc` → `/etc/profile.d` on Amazon Linux 2023, including managed PS1). Login-only `bash -l` is **not** used here—it tended to drop Standard_Stream sessions. Set to `""` to keep stock `/bin/sh` if you must troubleshoot Ansible `aws_ssm` issues.
 - `document_name` (string, default `SSM-SessionManagerRunShell`)
 - `enable_default_host_management` (bool, default `true`)
 - `create_default_host_management_role` (bool, default `true`)

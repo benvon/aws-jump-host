@@ -82,7 +82,8 @@ mkdir -p "$(dirname "$output_path")"
 terragrunt_err_file="$(mktemp)"
 state_list_file="$(mktemp)"
 if hosts_json="$(terragrunt --working-dir "$terragrunt_dir" output -json hosts 2>"$terragrunt_err_file")"; then
-  :
+  # Terragrunt often returns the raw map; terraform-style JSON wraps {value,type,sensitive}; null → {}.
+  hosts_json="$(printf '%s\n' "$hosts_json" | jq -c '.value // . // {}')"
 elif all_json="$(terragrunt --working-dir "$terragrunt_dir" output -json 2>"$terragrunt_err_file")"; then
   hosts_json="$(echo "$all_json" | jq -c '.hosts.value? // {}')"
 elif terragrunt --working-dir "$terragrunt_dir" state list >"$state_list_file" 2>>"$terragrunt_err_file" \

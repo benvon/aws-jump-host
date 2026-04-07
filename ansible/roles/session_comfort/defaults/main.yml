@@ -1,0 +1,14 @@
+---
+# Kubernetes pkgs.k8s.io path segment, e.g. v1.32 (see https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
+session_comfort_kubectl_channel: v1.32
+
+# Helm release version (no leading v in archive names)
+session_comfort_helm_version: "3.14.4"
+
+session_comfort_base_packages:
+  - git
+  - jq
+  - htop
+  - zip
+  - unzip
+  - gzip

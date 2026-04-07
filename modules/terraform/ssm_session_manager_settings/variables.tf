@@ -28,6 +28,18 @@ variable "run_as_default_user" {
   default     = ""
 }
 
+variable "linux_shell_profile" {
+  description = "Session Manager inputs.shellProfile.linux (POSIX sh, max 512 characters). null uses the module default: cd to $HOME then exec interactive bash (-i) so profile.d PS1 snippets load on Amazon Linux. Set to \"\" for stock /bin/sh only (no automatic cd/bash)."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.linux_shell_profile == null ? true : length(var.linux_shell_profile) <= 512
+    error_message = "linux_shell_profile must be at most 512 characters (AWS Session Manager limit)."
+  }
+}
+
 variable "session_data_kms_key_id" {
   description = "KMS key ID/ARN/alias used by Session Manager document inputs.kmsKeyId for session data encryption. Defaults to AWS managed alias/aws/ssm."
   type        = string
