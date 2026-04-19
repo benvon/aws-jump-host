@@ -11,4 +11,4 @@ permissions:
 
 jobs:
   quality:
-    uses: benvon/reusable-workflows/.github/workflows/aws-infra-quality.yml@35c37bc452dc991c2c8cc88c4fc48e4d7f0e0aaf
+    uses: benvon/reusable-workflows/.github/workflows/aws-infra-quality.yml@0a878c63c5a17372ecd27a1fd1fffd7c1b88e5d3
