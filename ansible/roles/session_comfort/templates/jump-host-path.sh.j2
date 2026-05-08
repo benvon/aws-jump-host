@@ -22,7 +22,7 @@ _jump_host_path_append() {
   esac
 }
 
-{% for dir in jump_host_path_prefix_effective if dir | trim | length > 0 %}
+{% for dir in session_comfort_path_prefix_effective if dir | trim | length > 0 %}
 _jump_host_path_prepend {{ dir | quote }}
 {% endfor %}
 
@@ -30,7 +30,7 @@ if [ -n "${HOME:-}" ]; then
   _jump_host_path_prepend "${HOME}/bin"
 fi
 
-{% for dir in jump_host_path_suffix_effective if dir | trim | length > 0 %}
+{% for dir in session_comfort_path_suffix_effective if dir | trim | length > 0 %}
 _jump_host_path_append {{ dir | quote }}
 {% endfor %}
 
