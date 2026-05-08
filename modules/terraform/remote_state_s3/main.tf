@@ -271,4 +271,17 @@ data "aws_iam_policy_document" "state_tls_only" {
 resource "aws_s3_bucket_policy" "state" {
   bucket = aws_s3_bucket.state.id
   policy = data.aws_iam_policy_document.state_tls_only.json
+
+  lifecycle {
+    precondition {
+      condition = !var.enable_in_account_ssm_transfer_access || alltrue([
+        for principal_arn in local.ssm_transfer_principals :
+        can(regex(
+          "^arn:${data.aws_partition.current.partition}:(iam|sts)::${data.aws_caller_identity.current.account_id}:.+$",
+          principal_arn
+        ))
+      ])
+      error_message = "When enable_in_account_ssm_transfer_access is true, every value in ssm_transfer_principal_arns must be an IAM or STS principal ARN in the current AWS account."
+    }
+  }
 }
