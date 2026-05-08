@@ -61,9 +61,9 @@ variable "ssm_transfer_principal_arns" {
   validation {
     condition = alltrue([
       for arn in var.ssm_transfer_principal_arns :
-      can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:", arn))
+      can(regex("^arn:(aws|aws-us-gov|aws-cn):iam::[0-9]{12}:(role|user)/.+$", arn))
     ])
-    error_message = "Each ssm_transfer_principal_arns entry must be a valid IAM ARN containing a 12-digit account ID (arn:aws:iam::<account-id>:...)."
+    error_message = "ssm_transfer_principal_arns must contain only IAM role/user ARNs with a 12-digit account id."
   }
 }
 

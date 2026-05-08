@@ -17,6 +17,7 @@ load helper
 }
 
 @test "orchestrate destroy passes -auto-approve to terragrunt when --auto-approve set" {
+  export SKIP_ACCOUNT_CHECK=true
   export SKIP_PREFLIGHT=true
   export FAKE_TG_SCENARIO=hosts_ok
   local log
@@ -34,6 +35,7 @@ load helper
 }
 
 @test "orchestrate destroy without --auto-approve does not add -auto-approve" {
+  export SKIP_ACCOUNT_CHECK=true
   export SKIP_PREFLIGHT=true
   export FAKE_TG_SCENARIO=hosts_ok
   local log
@@ -51,6 +53,7 @@ load helper
 }
 
 @test "orchestrate init includes ssm-self-management stack when enabled" {
+  export SKIP_ACCOUNT_CHECK=true
   export FAKE_TG_SCENARIO=hosts_ok
   local log
   log="$(mktemp)"

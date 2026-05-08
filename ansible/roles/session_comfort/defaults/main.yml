@@ -1,0 +1,13 @@
+---
+# Shell/session defaults managed by this role.
+# Set jump_host_* in group_vars or extra-vars (see ansible/group_vars/all.yml, vars-schema.example.yml).
+session_comfort_kubectl_channel: v1.32
+session_comfort_helm_version: "3.14.4"
+
+session_comfort_base_packages:
+  - git
+  - jq
+  - htop
+  - zip
+  - unzip
+  - gzip

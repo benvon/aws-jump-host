@@ -1,0 +1,38 @@
+# Ansible managed — PATH prefix/suffix (see jump_host_path_*_dirs) and prepend ~/bin (idempotent).
+# POSIX sh-safe so Session Manager can source this before exec bash -i (see ssm_session_manager_settings).
+_jump_host_path_prepend() {
+  case ":${PATH:-}:" in *:"$1":*) ;; *)
+    if [ -n "${PATH:-}" ]; then
+      PATH="$1:$PATH"
+    else
+      PATH="$1"
+    fi
+    ;;
+  esac
+}
+
+_jump_host_path_append() {
+  case ":${PATH:-}:" in *:"$1":*) ;; *)
+    if [ -n "${PATH:-}" ]; then
+      PATH="$PATH:$1"
+    else
+      PATH="$1"
+    fi
+    ;;
+  esac
+}
+
+{% for dir in session_comfort_path_prefix_effective if dir | trim | length > 0 %}
+_jump_host_path_prepend {{ dir | quote }}
+{% endfor %}
+
+if [ -n "${HOME:-}" ]; then
+  _jump_host_path_prepend "${HOME}/bin"
+fi
+
+{% for dir in session_comfort_path_suffix_effective if dir | trim | length > 0 %}
+_jump_host_path_append {{ dir | quote }}
+{% endfor %}
+
+export PATH
+unset -f _jump_host_path_prepend _jump_host_path_append 2>/dev/null || true

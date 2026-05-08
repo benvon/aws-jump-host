@@ -62,8 +62,14 @@ caller_identity() {
 is_sso_profile() {
   local p="${AWS_PROFILE:-}"
   [[ -n "$p" ]] || return 1
-  local url
+  local url session
   url="$(aws configure get sso_start_url --profile "$p" 2>/dev/null || true)"
+  if [[ -z "$url" ]]; then
+    session="$(aws configure get sso_session --profile "$p" 2>/dev/null || true)"
+    if [[ -n "$session" ]]; then
+      url="$(aws configure get sso_start_url --sso-session "$session" 2>/dev/null || true)"
+    fi
+  fi
   [[ -n "$url" ]]
 }
 
@@ -107,6 +113,10 @@ cmd_login() {
   require_aws
   [[ -n "${AWS_PROFILE:-}" ]] || die "Set AWS_PROFILE to your SSO profile before login."
   if is_sso_profile; then
+    if caller_identity; then
+      echo "OK: SSO credentials already valid for profile ${AWS_PROFILE}; skipping aws sso login."
+      return 0
+    fi
     aws sso login --profile "${AWS_PROFILE}"
   else
     die "Profile '${AWS_PROFILE}' has no sso_start_url. Use a named SSO profile or obtain credentials another way."
@@ -215,6 +225,7 @@ pick_instance_id() {
   fi
   if [[ ${#ids[@]} -gt 1 ]]; then
     echo "Multiple jump hosts match; choose one with --instance-id or narrow --tag / --name-contains:" >&2
+    name_contains=""
     cmd_list >&2
     exit 2
   fi

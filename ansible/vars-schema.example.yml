@@ -1,4 +1,24 @@
 ---
+# Optional: extra login exports merged after ansible/group_vars/all.yml jump_host_login_env (overlay wins on duplicate keys).
+jump_host_login_env_extra:
+  AWS_REGION: us-west-2
+
+# Optional: prepend (before ~/bin) / append PATH entries for every interactive shell.
+jump_host_path_prefix_dirs_extra:
+  - /opt/custom/bin
+jump_host_path_suffix_dirs_extra:
+  - /usr/local/extra/bin
+
+# Optional: extra RPMs installed with the baseline session_comfort package task (dnf).
+jump_host_extra_packages_extra:
+  - vim-enhanced
+
+# Optional: kubectl pkgs.k8s.io minor channel — use *_extra from answers file or set jump_host_kubectl_channel in group_vars.
+jump_host_kubectl_channel_extra: v1.33
+
+# Optional: Helm tarball version from https://get.helm.sh/ (no leading v).
+jump_host_helm_version_extra: "3.15.0"
+
 # Example external user declaration schema.
 #
 # WARNING — sudo_profile: admin uses unrestricted passwordless root (NOPASSWD:ALL) by default.

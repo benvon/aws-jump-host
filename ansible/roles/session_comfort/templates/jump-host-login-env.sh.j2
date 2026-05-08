@@ -1,0 +1,4 @@
+# Ansible managed — default environment variables for interactive login shells.
+{% for key, value in session_comfort_login_env_effective | dictsort %}
+export {{ key }}={{ value | quote }}
+{% endfor %}
