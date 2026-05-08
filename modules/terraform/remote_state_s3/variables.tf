@@ -57,6 +57,14 @@ variable "ssm_transfer_principal_arns" {
     condition     = !var.enable_in_account_ssm_transfer_access || length(var.ssm_transfer_principal_arns) > 0
     error_message = "When enable_in_account_ssm_transfer_access is true, ssm_transfer_principal_arns must include at least one IAM principal ARN."
   }
+
+  validation {
+    condition = alltrue([
+      for arn in var.ssm_transfer_principal_arns :
+      can(regex("^arn:(aws|aws-us-gov|aws-cn):iam::[0-9]{12}:(role|user)/.+$", arn))
+    ])
+    error_message = "ssm_transfer_principal_arns must contain only IAM role/user ARNs with a 12-digit account id."
+  }
 }
 
 variable "tags" {
