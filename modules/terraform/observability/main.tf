@@ -21,6 +21,8 @@ locals {
 data "aws_iam_policy_document" "kms" {
   count = var.kms_key_arn == null && var.create_kms_key ? 1 : 0
 
+  # KMS key policies must use Resource "*" — the resource is always the key this policy is attached to.
+  # https://docs.aws.amazon.com/kms/latest/developerguide/key-policies.html
   statement {
     sid    = "RootAccountAccess"
     effect = "Allow"

@@ -211,8 +211,9 @@ resource "aws_instance" "host" {
   }
 
   metadata_options {
-    http_endpoint = "enabled"
-    http_tokens   = "required"
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    instance_metadata_tags      = "enabled"
   }
 
   tags = merge(var.common_tags, each.value.tags, {

@@ -1,0 +1,29 @@
+---
+# Shell defaults for interactive sessions (/etc/profile.d/jump-host-login-env.sh). Usually set in group_vars/all.yml or extra-vars.
+# Optional overlay merged on top (add keys from extra-vars without repeating repo-wide defaults).
+jump_host_login_env: {}
+jump_host_login_env_extra: {}
+
+# PATH fragments: directories prepended (before ~/bin), then ~/bin, then suffix dirs; see jump-host-path.sh.j2.
+jump_host_path_prefix_dirs: []
+jump_host_path_suffix_dirs: []
+jump_host_path_prefix_dirs_extra: []
+jump_host_path_suffix_dirs_extra: []
+
+# Extra RPMs via dnf (Amazon Linux); merged with session_comfort_base_packages. Use *_extra to append from extra-vars without replacing group_vars.
+jump_host_extra_packages: []
+jump_host_extra_packages_extra: []
+
+# kubectl RPM stream from pkgs.k8s.io (minor channel, e.g. v1.32). Optional jump_host_kubectl_channel_extra in extra-vars overrides this alone.
+jump_host_kubectl_channel: v1.32
+
+# Helm release version (no leading v in get.helm.sh archive names). Optional jump_host_helm_version_extra in extra-vars overrides alone.
+jump_host_helm_version: "3.14.4"
+
+session_comfort_base_packages:
+  - git
+  - jq
+  - htop
+  - zip
+  - unzip
+  - gzip

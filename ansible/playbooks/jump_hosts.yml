@@ -7,9 +7,33 @@
   vars:
     ansible_aws_ssm_region: "{{ lookup('env', 'AWS_REGION') | default('us-east-1', true) }}"
 
+  pre_tasks:
+    - name: Resolve jump_host_environment for prompt (orchestrator --env or env JUMP_HOST_ENVIRONMENT)
+      ansible.builtin.set_fact:
+        jump_host_environment_resolved: "{% if jump_host_environment is defined and jump_host_environment | trim | length > 0 %}{{ jump_host_environment | trim }}{% else %}{{ lookup('env', 'JUMP_HOST_ENVIRONMENT', errors='ignore') | default('', true) | trim }}{% endif %}"
+
+    - name: Resolve Environment label from EC2 instance tag (matches common_tags.Environment from Terragrunt)
+      when: jump_host_environment_resolved | default('') | length == 0
+      block:
+        - name: Describe instance for Environment tag
+          amazon.aws.ec2_instance_info:
+            instance_ids:
+              - "{{ inventory_hostname }}"
+            region: "{{ ansible_aws_ssm_region }}"
+          register: jump_host_ec2_instance
+          delegate_to: localhost
+
+        - name: Set jump_host_environment_resolved from instance tag
+          ansible.builtin.set_fact:
+            jump_host_environment_resolved: "{{ (jump_host_ec2_instance.instances[0].tags.Environment | default('', true)) | trim }}"
+          when:
+            - jump_host_ec2_instance.instances | default([]) | length > 0
+            - (jump_host_ec2_instance.instances[0].tags.Environment | default('', true) | trim | length) > 0
+
   roles:
     - role: home_volume
     - role: base_hardening
+    - role: session_comfort
     - role: user_accounts
       vars:
         user_accounts_users: "{{ users | default([]) }}"

@@ -1,4 +1,10 @@
 ---
+# Exported for every interactive login shell (see roles/session_comfort/templates/jump-host-login-env.sh.j2).
+# Optional jump_host_login_env_extra in extra-vars (e.g. ansible/users.yaml) merges on top without repeating keys here.
+# Setting jump_host_login_env in the same extra-vars file replaces this dict entirely (Ansible merge rules).
+jump_host_login_env:
+  AWS_PROFILE: asicsca
+
 users: []
 managed_user_uid_min: 1000
 managed_user_exclusions:

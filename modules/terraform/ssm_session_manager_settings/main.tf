@@ -37,6 +37,14 @@ locals {
     : "${local.normalized_default_host_management_role_path}/${var.default_host_management_role_name}"
   )
 
+  # Source managed login exports and PATH snippet before bash so defaults apply for every Run As user
+  # (e.g. AWS_PROFILE, ~/bin on PATH), including ec2-user. POSIX sh snippet (.profile.d path) must stay sh-safe.
+  # bash -i still loads /etc/bashrc → profile.d on AL2023 (duplicate sourcing is idempotent).
+  # Avoid bash -l here — it dropped Standard_Stream sessions in testing.
+  default_linux_shell_profile = ". /etc/profile.d/jump-host-login-env.sh 2>/dev/null || true; . /etc/profile.d/jump-host-path.sh 2>/dev/null || true; cd \"$${HOME:-/}\"; exec /bin/bash -i"
+
+  linux_shell_profile_effective = var.linux_shell_profile == null ? local.default_linux_shell_profile : var.linux_shell_profile
+
   # Note: inputs.runAsDefaultUser must be a literal string (or empty). AWS
   # rejects template placeholders such as {{runAsDefaultUser}} in Session
   # documents (InvalidDocumentContent). Per-session OS user selection is not
@@ -60,7 +68,7 @@ locals {
       maxSessionDuration          = ""
       shellProfile = {
         windows = ""
-        linux   = ""
+        linux   = local.linux_shell_profile_effective
       }
     }
   }
@@ -161,14 +169,50 @@ data "aws_iam_policy_document" "session_access_role" {
     ]
   }
 
+  # DescribeInstanceInformation supports only Resource "*" (no resource-level ARN). Scope with the same
+  # SSM resource tags used for StartSession. See: https://docs.aws.amazon.com/service-authorization/latest/reference/list_awssystemsmanager.html
   statement {
-    sid    = "AllowDescribeForSessionTargets"
+    sid    = "AllowDescribeSsmInstanceInformationForJumpHosts"
     effect = "Allow"
     actions = [
       "ssm:DescribeInstanceInformation",
+    ]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "ssm:resourceTag/JumpHost"
+      values   = ["true"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "ssm:resourceTag/AccessProfile"
+      values   = [each.value.access_profile]
+    }
+  }
+
+  # ec2:DescribeInstances is evaluated with Resource "*"; scope access using ec2:ResourceTag conditions
+  # aligned with JumpHost / AccessProfile on session targets.
+  statement {
+    sid    = "AllowDescribeEc2InstancesForJumpHosts"
+    effect = "Allow"
+    actions = [
       "ec2:DescribeInstances",
     ]
     resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:ResourceTag/JumpHost"
+      values   = ["true"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:ResourceTag/AccessProfile"
+      values   = [each.value.access_profile]
+    }
   }
 
   dynamic "statement" {
