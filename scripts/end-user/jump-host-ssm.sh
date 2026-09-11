@@ -121,13 +121,16 @@ build_filters() {
     "Name=instance-state-name,Values=running"
   )
   local pair key val
-  for pair in "${extra_tag_pairs[@]}"; do
-    [[ "$pair" == *"="* ]] || die "Invalid --tag (expected KEY=VALUE): $pair"
-    key="${pair%%=*}"
-    val="${pair#*=}"
-    [[ -n "$key" && -n "$val" ]] || die "Invalid --tag (empty key or value): $pair"
-    jump_filters+=("Name=tag:${key},Values=${val}")
-  done
+  # Bash 3.2 + set -u: "${arr[@]}" is unbound when arr is empty.
+  if [[ ${#extra_tag_pairs[@]} -gt 0 ]]; then
+    for pair in "${extra_tag_pairs[@]}"; do
+      [[ "$pair" == *"="* ]] || die "Invalid --tag (expected KEY=VALUE): $pair"
+      key="${pair%%=*}"
+      val="${pair#*=}"
+      [[ -n "$key" && -n "$val" ]] || die "Invalid --tag (empty key or value): $pair"
+      jump_filters+=("Name=tag:${key},Values=${val}")
+    done
+  fi
 }
 
 list_instance_lines() {
@@ -158,14 +161,16 @@ cmd_list() {
 
   local -a filtered=()
   local id name az
-  for line in "${lines[@]}"; do
-    read_instance_row "${line}"
-    [[ -n "${id:-}" ]] || continue
-    if [[ -n "${name_contains:-}" ]]; then
-      [[ "${name:-}" == *"${name_contains}"* ]] || continue
-    fi
-    filtered+=("${line}")
-  done
+  if [[ ${#lines[@]} -gt 0 ]]; then
+    for line in "${lines[@]}"; do
+      read_instance_row "${line}"
+      [[ -n "${id:-}" ]] || continue
+      if [[ -n "${name_contains:-}" ]]; then
+        [[ "${name:-}" == *"${name_contains}"* ]] || continue
+      fi
+      filtered+=("${line}")
+    done
+  fi
   if [[ ${#filtered[@]} -eq 0 ]]; then
     if [[ ${#extra_tag_pairs[@]} -gt 0 ]]; then
       echo "No matching running jump hosts (JumpHost=true with given --tag filters)."
@@ -201,14 +206,16 @@ pick_instance_id() {
 
   local -a ids=()
   local id name az
-  for line in "${lines[@]}"; do
-    read_instance_row "${line}"
-    [[ -n "${id:-}" ]] || continue
-    if [[ -n "${name_contains:-}" ]]; then
-      [[ "${name:-}" == *"${name_contains}"* ]] || continue
-    fi
-    ids+=("$id")
-  done
+  if [[ ${#lines[@]} -gt 0 ]]; then
+    for line in "${lines[@]}"; do
+      read_instance_row "${line}"
+      [[ -n "${id:-}" ]] || continue
+      if [[ -n "${name_contains:-}" ]]; then
+        [[ "${name:-}" == *"${name_contains}"* ]] || continue
+      fi
+      ids+=("$id")
+    done
+  fi
 
   if [[ ${#ids[@]} -eq 0 ]]; then
     die "No matching running jump hosts. Narrow filters with --tag or check your account/region."
