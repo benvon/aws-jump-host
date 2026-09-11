@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Jump-host helper: SSO login with device code (no browser; SSM sessions have none).
+set -euo pipefail
+
+die() {
+  echo "Error: $*" >&2
+  exit 1
+}
+
+profile="${AWS_PROFILE:-}"
+[[ -n "$profile" ]] || die "AWS_PROFILE is not set. Export AWS_PROFILE (typically via jump_host_login_env)."
+
+command -v aws >/dev/null 2>&1 || die "aws CLI not found on PATH."
+
+exec aws sso login --profile "$profile" --no-browser --use-device-code

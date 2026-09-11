@@ -4,6 +4,10 @@
 # Setting jump_host_login_env in the same extra-vars file replaces this dict entirely (Ansible merge rules).
 jump_host_login_env: {}
 
+# EKS cluster name consumed by /usr/local/bin/kubelogin (written to /etc/jump-host-eks-cluster).
+# Set per environment in extra-vars (jump_host_eks_cluster_name or jump_host_eks_cluster_name_extra).
+jump_host_eks_cluster_name: ""
+
 users: []
 managed_user_uid_min: 1000
 managed_user_exclusions:

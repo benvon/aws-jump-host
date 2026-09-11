@@ -28,6 +28,12 @@
       {{
         jump_host_helm_version_extra | default(jump_host_helm_version | default(session_comfort_helm_version))
       }}
+    session_comfort_eks_cluster_effective: >-
+      {{
+        jump_host_eks_cluster_name_extra
+        | default(jump_host_eks_cluster_name | default(session_comfort_eks_cluster_name))
+        | trim
+      }}
 
 - name: Set Helm archive architecture label
   ansible.builtin.set_fact:
@@ -104,6 +110,17 @@
         group: root
         mode: "0755"
 
+- name: Install jump-host AWS SSO and kubeconfig helpers
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - awslogin
+    - kubelogin
+
 - name: Install jump host profile.d PATH snippet (prefix/suffix dirs + ~/bin)
   ansible.builtin.template:
     src: jump-host-path.sh.j2
@@ -141,6 +158,21 @@
     path: /etc/jump-host-environment
     state: absent
   when: jump_host_environment_resolved | default('') | trim | length == 0
+
+- name: Publish /etc/jump-host-eks-cluster when a cluster name is configured
+  ansible.builtin.copy:
+    content: "{{ session_comfort_eks_cluster_effective }}\n"
+    dest: /etc/jump-host-eks-cluster
+    owner: root
+    group: root
+    mode: "0644"
+  when: session_comfort_eks_cluster_effective | length > 0
+
+- name: Remove stale /etc/jump-host-eks-cluster when no cluster name is configured
+  ansible.builtin.file:
+    path: /etc/jump-host-eks-cluster
+    state: absent
+  when: session_comfort_eks_cluster_effective | length == 0
 
 - name: Install jump host profile.d prompt snippet (zzz- prefix runs after other profile.d)
   ansible.builtin.template:

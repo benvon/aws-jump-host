@@ -151,6 +151,11 @@ The `user_accounts` role is authoritative for managed users above the UID thresh
 
 To customize the `ops` sudo allowlist, set `user_accounts_ops_sudo_commands` in group vars or extra-vars (this repository’s `ansible/group_vars/all.yml` is the default). If you previously used `ops_sudo_commands` in an external inputs repo, rename that key to match the role variable.
 
+Per-environment jump-host login helpers (`/usr/local/bin/awslogin`, `/usr/local/bin/kubelogin`) need:
+
+- `AWS_PROFILE` (and typically `AWS_REGION`) in `jump_host_login_env` / `jump_host_login_env_extra`
+- `jump_host_eks_cluster_name` or `jump_host_eks_cluster_name_extra` for that environment’s EKS cluster (written to `/etc/jump-host-eks-cluster`; `kubelogin` errors if the file is missing or empty)
+
 ## Local and CI Validation
 
 Local:

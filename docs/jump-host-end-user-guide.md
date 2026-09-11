@@ -80,6 +80,19 @@ jump-host-ssm.sh connect --instance-id i-0123456789abcdef0
 
 If several instances match, the script prints the candidates and exits; use `--tag`, `--name-contains`, or `--instance-id` until the match is unique.
 
+### On the jump host: `awslogin` and `kubelogin`
+
+After you are on the host, two helpers are on `PATH` (`/usr/local/bin`):
+
+```bash
+awslogin    # aws sso login --profile "$AWS_PROFILE" --no-browser --use-device-code
+kubelogin   # aws eks update-kubeconfig for this environment's cluster, then kubectl config use-context
+```
+
+Both read **`AWS_PROFILE`** and **`AWS_REGION`** from the environment (usually set by login defaults). `awslogin` uses the device-code flow because Session Manager has no browser.
+
+`kubelogin` reads the cluster name from **`/etc/jump-host-eks-cluster`** and uses it as `--name`, `--alias`, and the kubectl context. If that file is missing or empty, `kubelogin` exits with an error; `awslogin` still works. Admins set the cluster name with `jump_host_eks_cluster_name` (see `docs/consumer-guide.md`).
+
 ### Choosing the Linux (OS) user for the session
 
 Session Manager **Run As** is how AWS picks the account on the instance (instead of the default `ssm-user`). In most organizations the OS user is **not** a free-form CLI choice. AWS resolves it in this order (see [Turn on Run As support for Linux and macOS managed nodes](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-preferences-run-as.html)):
