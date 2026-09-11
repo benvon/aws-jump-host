@@ -161,6 +161,8 @@ Per-environment `log-transfer` (S3 bucket + `/usr/local/bin/log-transfer`) needs
 - `users[].iam_role_arns` in extra-vars so those principals can `s3:GetObject` / `s3:ListBucket` via the **bucket policy** (Identity Center reserved roles are not mutated). If the list is empty, uploads still work but console downloads return 403 until ARNs are set and `log-transfer` is re-applied.
 - `orchestrate.sh` apply/configure after the `log-transfer` stack exists so Ansible writes `/etc/jump-host-log-transfer-bucket` and `/etc/jump-host-log-transfer-region`.
 
+**Upgrade:** Existing live repos must add `<region>/log-transfer/` (copy from `examples/live/.../log-transfer/`). `log-transfer` is in `required_dirs`; without that directory, `orchestrate.sh` refuses to run.
+
 ## Local and CI Validation
 
 Local:

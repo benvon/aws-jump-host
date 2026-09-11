@@ -49,7 +49,10 @@ cleanup() { rm -rf "$work_dir"; }
 trap cleanup EXIT
 
 zip -r "$zip_path" "$@" >/dev/null
-zipinfo -1 "$zip_path" | grep -q . || die "Zip archive is empty."
+set +o pipefail
+first_entry="$(zipinfo -1 "$zip_path" | head -n 1 || true)"
+set -o pipefail
+[[ -n "${first_entry:-}" ]] || die "Zip archive is empty."
 
 cat >"$aws_config" <<'EOF'
 [default]
@@ -60,9 +63,12 @@ s3 =
 EOF
 
 env -u AWS_PROFILE -u AWS_DEFAULT_PROFILE \
+  -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
+  AWS_SHARED_CREDENTIALS_FILE=/dev/null \
   AWS_CONFIG_FILE="$aws_config" \
   aws s3 cp "$zip_path" "s3://${bucket}/${key}" \
     --region "$region" \
+    --storage-class INTELLIGENT_TIERING \
     --only-show-errors
 
 printf 'https://s3.console.aws.amazon.com/s3/object/%s?region=%s&prefix=%s\n' "$bucket" "$region" "$key"

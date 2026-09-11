@@ -73,9 +73,11 @@ load helper
   export SKIP_ACCOUNT_CHECK=true
   export SKIP_PREFLIGHT=true
   export FAKE_TG_SCENARIO=hosts_empty
-  local log
+  local log ansible_log
   log="$(mktemp)"
+  ansible_log="$(mktemp)"
   export FAKE_TG_LOG="$log"
+  export FAKE_ANSIBLE_LOG="$ansible_log"
   run ./scripts/orchestrate.sh plan \
     --live-dir ./examples/live \
     --env dev \
@@ -89,7 +91,9 @@ j = text.find("jump-hosts")
 l = text.find("log-transfer")
 assert j != -1 and l != -1 and j < l, text
 ' "$log"
-  rm -f "$log"
+  grep -q 'jump_host_log_transfer_bucket=example-log-transfer-bucket' "$ansible_log"
+  grep -q 'jump_host_log_transfer_region=us-east-1' "$ansible_log"
+  rm -f "$log" "$ansible_log"
 }
 
 @test "orchestrate destroy runs log-transfer before jump-hosts" {

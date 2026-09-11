@@ -18,6 +18,9 @@ setup() {
   export PATH="${FAKE_BIN}:${PATH}"
   export AWS_PROFILE=should-not-be-used
   export AWS_DEFAULT_PROFILE=also-should-not
+  export AWS_ACCESS_KEY_ID=should-not-be-used
+  export AWS_SECRET_ACCESS_KEY=also-should-not
+  export AWS_SESSION_TOKEN=session-should-not
   printf 'hello\n' >"$SRC_DIR/app.log"
   mkdir -p "$SRC_DIR/nested"
   printf 'inner\n' >"$SRC_DIR/nested/a.txt"
@@ -27,6 +30,10 @@ setup() {
 {
   echo "PROFILE=${AWS_PROFILE-<unset>}"
   echo "DEFAULT_PROFILE=${AWS_DEFAULT_PROFILE-<unset>}"
+  echo "ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID-<unset>}"
+  echo "SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY-<unset>}"
+  echo "SESSION_TOKEN=${AWS_SESSION_TOKEN-<unset>}"
+  echo "SHARED_CREDENTIALS_FILE=${AWS_SHARED_CREDENTIALS_FILE-<unset>}"
   echo "CONFIG_FILE=${AWS_CONFIG_FILE-<unset>}"
   if [[ -n "${AWS_CONFIG_FILE:-}" && -f "${AWS_CONFIG_FILE}" ]]; then
     echo "CONFIG_BEGIN"
@@ -118,9 +125,35 @@ teardown() {
   grep -q -- '--only-show-errors' "$AWS_LOG"
   grep -q 'PROFILE=<unset>' "$AWS_LOG"
   grep -q 'DEFAULT_PROFILE=<unset>' "$AWS_LOG"
+  grep -q 'ACCESS_KEY_ID=<unset>' "$AWS_LOG"
+  grep -q 'SECRET_ACCESS_KEY=<unset>' "$AWS_LOG"
+  grep -q 'SESSION_TOKEN=<unset>' "$AWS_LOG"
+  grep -q 'SHARED_CREDENTIALS_FILE=/dev/null' "$AWS_LOG"
+  grep -q -- '--storage-class INTELLIGENT_TIERING' "$AWS_LOG"
   grep -q 'multipart_threshold = 16MB' "$AWS_LOG"
   grep -q 'multipart_chunksize = 64MB' "$AWS_LOG"
   ! find "$HOME_DIR/.cache/log-transfer" -name '*.zip' 2>/dev/null | grep -q .
+}
+
+@test "log-transfer accepts large zip listings without SIGPIPE" {
+  cat >"$FAKE_BIN/zipinfo" <<'EOF'
+#!/usr/bin/env bash
+archive=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -1) shift ;;
+    *) archive="$1"; shift ;;
+  esac
+done
+for i in $(seq 1 4000); do
+  printf 'entry-%04d.txt\n' "$i"
+done
+printf '%s\n' "$archive"
+EOF
+  chmod +x "$FAKE_BIN/zipinfo"
+  run "$LOG_TRANSFER" "$SRC_DIR/app.log"
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == *"s3.console.aws.amazon.com"* ]]
 }
 
 @test "log-transfer prints no URL when aws s3 cp fails" {
