@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Jump-host helper: write kubeconfig for this environment's EKS cluster and select it.
+set -euo pipefail
+
+die() {
+  echo "Error: $*" >&2
+  exit 1
+}
+
+profile="${AWS_PROFILE:-}"
+region="${AWS_REGION:-${AWS_DEFAULT_REGION:-}}"
+cluster_file="${JUMP_HOST_EKS_CLUSTER_FILE:-/etc/jump-host-eks-cluster}"
+
+[[ -n "$profile" ]] || die "AWS_PROFILE is not set. Export AWS_PROFILE (typically via jump_host_login_env)."
+[[ -n "$region" ]] || die "AWS_REGION is not set. Export AWS_REGION (or AWS_DEFAULT_REGION)."
+
+cluster=""
+if [[ -r "$cluster_file" ]]; then
+  cluster="$(tr -d '\n\r' <"$cluster_file" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+fi
+[[ -n "$cluster" ]] || die "No EKS cluster name configured (missing or empty ${cluster_file})."
+
+command -v aws >/dev/null 2>&1 || die "aws CLI not found on PATH."
+command -v kubectl >/dev/null 2>&1 || die "kubectl not found on PATH."
+
+aws eks update-kubeconfig \
+  --name "$cluster" \
+  --region "$region" \
+  --profile "$profile" \
+  --alias "$cluster"
+kubectl config use-context "$cluster"

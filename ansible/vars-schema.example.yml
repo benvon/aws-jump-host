@@ -1,7 +1,12 @@
 ---
+# Optional: EKS cluster name for /usr/local/bin/kubelogin on this environment's jump hosts.
+# Written to /etc/jump-host-eks-cluster at configure time. Overlay wins over group_vars.
+jump_host_eks_cluster_name_extra: stage-eks
+
 # Optional: extra login exports merged after ansible/group_vars/all.yml jump_host_login_env (overlay wins on duplicate keys).
 jump_host_login_env_extra:
   AWS_REGION: us-west-2
+  AWS_PROFILE: your-sso-profile
 
 # Optional: prepend (before ~/bin) / append PATH entries for every interactive shell.
 jump_host_path_prefix_dirs_extra:
