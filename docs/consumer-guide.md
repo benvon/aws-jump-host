@@ -158,8 +158,8 @@ Per-environment jump-host login helpers (`/usr/local/bin/awslogin`, `/usr/local/
 
 Per-environment `log-transfer` (S3 bucket + `/usr/local/bin/log-transfer`) needs:
 
-- `users[].iam_role_arns` in extra-vars so those principals can `s3:GetObject` / `s3:ListBucket` via the **bucket policy** (Identity Center reserved roles are not mutated). If the list is empty, uploads still work but console downloads return 403 until ARNs are set and `log-transfer` is re-applied.
-- `orchestrate.sh` apply/configure after the `log-transfer` stack exists so Ansible writes `/etc/jump-host-log-transfer-bucket` and `/etc/jump-host-log-transfer-region`.
+- `users[].iam_role_arns` from the same extra-vars file as Ansible (`--users-vars`). `orchestrate.sh` exports that path as `JUMP_HOST_USERS_VARS` so the `log-transfer` stack’s bucket policy matches the operators you provision. If you run Terragrunt directly, set `JUMP_HOST_USERS_VARS` or keep `ansible/users.yaml` as an ancestor of the stack. If the list is empty, uploads still work but console downloads return 403 until ARNs are set and `log-transfer` is re-applied. Identity Center reserved roles are not mutated.
+- `orchestrate.sh` apply/configure after the `log-transfer` stack exists so Ansible writes `/etc/jump-host-log-transfer-bucket` and `/etc/jump-host-log-transfer-region`. A failed Terragrunt output lookup on apply/configure is an error (it will not wipe those files). `plan` leaves existing host files unchanged when outputs are unavailable.
 
 **Upgrade:** Existing live repos must add `<region>/log-transfer/` (copy from `examples/live/.../log-transfer/`). `log-transfer` is in `required_dirs`; without that directory, `orchestrate.sh` refuses to run.
 

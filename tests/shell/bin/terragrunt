@@ -5,6 +5,9 @@ set -euo pipefail
 if [[ -n "${FAKE_TG_LOG:-}" ]]; then
   printf '%q ' "$@" >>"$FAKE_TG_LOG"
   echo >>"$FAKE_TG_LOG"
+  if [[ -n "${JUMP_HOST_USERS_VARS:-}" ]]; then
+    printf 'JUMP_HOST_USERS_VARS=%s\n' "$JUMP_HOST_USERS_VARS" >>"$FAKE_TG_LOG"
+  fi
 fi
 
 args=()
@@ -50,6 +53,10 @@ if [[ "${1:-}" == output && "${2:-}" == -json ]]; then
 fi
 
 if [[ "${1:-}" == output && "${2:-}" == -raw ]]; then
+  if [[ "${FAKE_TG_OUTPUT_FAIL:-}" == "1" ]]; then
+    echo "fake: output -raw ${3:-} unavailable" >&2
+    exit 1
+  fi
   case "${3:-}" in
     bucket_name)
       echo "example-log-transfer-bucket"

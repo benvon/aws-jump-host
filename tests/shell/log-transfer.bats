@@ -55,18 +55,22 @@ printf '%q ' "$@" >>"${ZIP_LOG}"
 printf '\n' >>"${ZIP_LOG}"
 archive=""
 paths=()
+move_mode=0
+end_opts=0
 while [[ $# -gt 0 ]]; do
-  case "$1" in
-    -r) shift ;;
-    *)
-      if [[ -z "$archive" ]]; then
-        archive="$1"
-      else
-        paths+=("$1")
-      fi
-      shift
-      ;;
-  esac
+  if [[ "$end_opts" -eq 0 ]]; then
+    case "$1" in
+      --) end_opts=1; shift; continue ;;
+      -r) shift; continue ;;
+      -m) move_mode=1; shift; continue ;;
+    esac
+  fi
+  if [[ -z "$archive" ]]; then
+    archive="$1"
+  else
+    paths+=("$1")
+  fi
+  shift
 done
 mkdir -p "$(dirname "$archive")"
 : >"$archive"
@@ -74,6 +78,11 @@ for p in "${paths[@]+"${paths[@]}"}"; do
   printf '%s\n' "$p" >>"$archive"
 done
 [[ -s "$archive" ]] || exit 1
+if [[ "$move_mode" -eq 1 ]]; then
+  for p in "${paths[@]+"${paths[@]}"}"; do
+    rm -rf "$p"
+  done
+fi
 exit 0
 EOF
   cat >"$FAKE_BIN/zipinfo" <<'EOF'
@@ -160,4 +169,14 @@ EOF
   FAKE_AWS_FAIL=1 run "$LOG_TRANSFER" "$SRC_DIR/app.log"
   [[ "$status" -ne 0 ]]
   [[ "$output" != *"s3.console.aws.amazon.com"* ]]
+}
+
+@test "log-transfer terminates zip options before caller paths" {
+  cd "$SRC_DIR"
+  printf 'dash\n' >-m
+  run "$LOG_TRANSFER" app.log -m
+  [[ "$status" -eq 0 ]]
+  [[ -f app.log ]]
+  [[ -f ./-m ]]
+  grep -q -- ' -- ' "$ZIP_LOG"
 }

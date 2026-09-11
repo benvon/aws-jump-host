@@ -119,3 +119,65 @@ assert l != -1 and j != -1 and l < j, text
 ' "$log"
   rm -f "$log"
 }
+
+@test "orchestrate exports JUMP_HOST_USERS_VARS from --users-vars" {
+  export SKIP_ACCOUNT_CHECK=true
+  export SKIP_PREFLIGHT=true
+  export FAKE_TG_SCENARIO=hosts_empty
+  local log ansible_log users
+  log="$(mktemp)"
+  ansible_log="$(mktemp)"
+  users="$(mktemp)"
+  printf 'users: []\n' >"$users"
+  export FAKE_TG_LOG="$log"
+  export FAKE_ANSIBLE_LOG="$ansible_log"
+  run ./scripts/orchestrate.sh plan \
+    --live-dir ./examples/live \
+    --env dev \
+    --subenv east \
+    --region us-east-1 \
+    --users-vars "$users"
+  [[ "$status" -eq 0 ]]
+  grep -q "JUMP_HOST_USERS_VARS=${users}" "$log"
+  rm -f "$log" "$ansible_log" "$users"
+}
+
+@test "orchestrate configure fails when log-transfer outputs cannot be read" {
+  export SKIP_ACCOUNT_CHECK=true
+  export SKIP_PREFLIGHT=true
+  export FAKE_TG_SCENARIO=hosts_empty
+  export FAKE_TG_OUTPUT_FAIL=1
+  local ansible_log
+  ansible_log="$(mktemp)"
+  export FAKE_ANSIBLE_LOG="$ansible_log"
+  run ./scripts/orchestrate.sh configure \
+    --live-dir ./examples/live \
+    --env dev \
+    --subenv east \
+    --region us-east-1
+  [[ "$status" -ne 0 ]]
+  [[ "$output" == *"log-transfer"* ]]
+  ! grep -q 'jump_host_log_transfer_bucket=' "$ansible_log"
+  rm -f "$ansible_log"
+}
+
+@test "orchestrate plan skips log-transfer extra-vars when output lookup fails" {
+  export SKIP_ACCOUNT_CHECK=true
+  export SKIP_PREFLIGHT=true
+  export FAKE_TG_SCENARIO=hosts_empty
+  export FAKE_TG_OUTPUT_FAIL=1
+  local log ansible_log
+  log="$(mktemp)"
+  ansible_log="$(mktemp)"
+  export FAKE_TG_LOG="$log"
+  export FAKE_ANSIBLE_LOG="$ansible_log"
+  run ./scripts/orchestrate.sh plan \
+    --live-dir ./examples/live \
+    --env dev \
+    --subenv east \
+    --region us-east-1
+  [[ "$status" -eq 0 ]]
+  grep -q 'jump_host_log_transfer_skip=true' "$ansible_log"
+  ! grep -q 'jump_host_log_transfer_bucket=' "$ansible_log"
+  rm -f "$log" "$ansible_log"
+}

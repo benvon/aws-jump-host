@@ -194,13 +194,17 @@
     owner: root
     group: root
     mode: "0644"
-  when: session_comfort_log_transfer_bucket_effective | length > 0
+  when:
+    - not (jump_host_log_transfer_skip | default(false) | bool)
+    - session_comfort_log_transfer_bucket_effective | length > 0
 
 - name: Remove stale /etc/jump-host-log-transfer-bucket when empty
   ansible.builtin.file:
     path: /etc/jump-host-log-transfer-bucket
     state: absent
-  when: session_comfort_log_transfer_bucket_effective | length == 0
+  when:
+    - not (jump_host_log_transfer_skip | default(false) | bool)
+    - session_comfort_log_transfer_bucket_effective | length == 0
 
 - name: Publish /etc/jump-host-log-transfer-region when configured
   ansible.builtin.copy:
@@ -209,13 +213,17 @@
     owner: root
     group: root
     mode: "0644"
-  when: session_comfort_log_transfer_region_effective | length > 0
+  when:
+    - not (jump_host_log_transfer_skip | default(false) | bool)
+    - session_comfort_log_transfer_region_effective | length > 0
 
 - name: Remove stale /etc/jump-host-log-transfer-region when empty
   ansible.builtin.file:
     path: /etc/jump-host-log-transfer-region
     state: absent
-  when: session_comfort_log_transfer_region_effective | length == 0
+  when:
+    - not (jump_host_log_transfer_skip | default(false) | bool)
+    - session_comfort_log_transfer_region_effective | length == 0
 
 - name: Install jump host profile.d prompt snippet (zzz- prefix runs after other profile.d)
   ansible.builtin.template:

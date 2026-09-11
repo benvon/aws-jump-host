@@ -4,7 +4,7 @@ include "root" {
 }
 
 locals {
-  users_file = try(find_in_parent_folders("ansible/users.yaml"), "")
+  users_file = get_env("JUMP_HOST_USERS_VARS", try(find_in_parent_folders("ansible/users.yaml"), ""))
   users      = local.users_file != "" ? try(yamldecode(file(local.users_file)).users, []) : []
   downloader_role_arns = distinct(flatten([
     for user in local.users : try(user.iam_role_arns, [])
@@ -14,7 +14,7 @@ locals {
 dependency "jump_hosts" {
   config_path = "../jump-hosts"
 
-  mock_outputs_allowed_in_commands = ["validate", "plan"]
+  mock_outputs_allowed_terraform_commands = ["validate", "plan"]
   mock_outputs = {
     instance_role_arn  = "arn:aws:iam::111111111111:role/mock-jump-instance"
     instance_role_name = "mock-jump-instance"

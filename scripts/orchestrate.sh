@@ -175,6 +175,13 @@ for dir in "${required_dirs[@]}"; do
   fi
 done
 
+if [[ -n "$users_vars" ]]; then
+  if [[ "$users_vars" != /* ]]; then
+    users_vars="$(cd "$(dirname -- "$users_vars")" && pwd)/$(basename -- "$users_vars")"
+  fi
+  export JUMP_HOST_USERS_VARS="$users_vars"
+fi
+
 require_cmd terragrunt
 mkdir -p "$TG_DOWNLOAD_DIR"
 
@@ -270,19 +277,19 @@ resolve_ssm_transfer_bucket() {
 
 resolve_log_transfer_outputs() {
   local bucket region
-  if ! bucket="$(terragrunt --working-dir "$log_transfer_dir" output -raw bucket_name 2>/dev/null)"; then
-    echo ""
-    return 0
+  if ! bucket="$(terragrunt --working-dir "$log_transfer_dir" output -raw bucket_name)"; then
+    echo "Error: could not read log-transfer output bucket_name from ${log_transfer_dir}." >&2
+    return 1
   fi
-  if ! region="$(terragrunt --working-dir "$log_transfer_dir" output -raw region 2>/dev/null)"; then
-    echo ""
-    return 0
+  if ! region="$(terragrunt --working-dir "$log_transfer_dir" output -raw region)"; then
+    echo "Error: could not read log-transfer output region from ${log_transfer_dir}." >&2
+    return 1
   fi
   bucket="$(printf '%s' "$bucket" | tr -d '\n\r')"
   region="$(printf '%s' "$region" | tr -d '\n\r')"
   if [[ -z "$bucket" || -z "$region" ]]; then
-    echo ""
-    return 0
+    echo "Error: log-transfer outputs bucket_name/region are empty in ${log_transfer_dir}." >&2
+    return 1
   fi
   printf '%s\t%s\n' "$bucket" "$region"
 }
@@ -370,12 +377,17 @@ run_ansible() {
   fi
 
   local log_xfer
-  log_xfer="$(resolve_log_transfer_outputs || true)"
-  if [[ -n "$log_xfer" ]]; then
-    extra+=(--extra-vars "jump_host_log_transfer_bucket=${log_xfer%%$'\t'*}")
-    extra+=(--extra-vars "jump_host_log_transfer_region=${log_xfer#*$'\t'}")
-  else
-    printf "\n==> [ansible/%s] WARNING: log-transfer outputs unavailable; /etc/jump-host-log-transfer-* will be empty until that stack is applied.\n" "$playbook" >&2
+  if [[ "$playbook" == "jump_hosts.yml" ]]; then
+    if log_xfer="$(resolve_log_transfer_outputs)"; then
+      extra+=(--extra-vars "jump_host_log_transfer_bucket=${log_xfer%%$'\t'*}")
+      extra+=(--extra-vars "jump_host_log_transfer_region=${log_xfer#*$'\t'}")
+    elif [[ "$check_mode" == "true" ]]; then
+      printf "\n==> [ansible/%s] WARNING: log-transfer outputs unavailable; leaving /etc/jump-host-log-transfer-* unchanged.\n" "$playbook" >&2
+      extra+=(--extra-vars "jump_host_log_transfer_skip=true")
+    else
+      echo "Error: could not read log-transfer Terragrunt outputs; refusing to overwrite /etc/jump-host-log-transfer-*." >&2
+      exit 1
+    fi
   fi
 
   if [[ -n "$env_name" ]]; then

@@ -48,7 +48,7 @@ aws_config="${work_dir}/aws-config"
 cleanup() { rm -rf "$work_dir"; }
 trap cleanup EXIT
 
-zip -r "$zip_path" "$@" >/dev/null
+zip -r "$zip_path" -- "$@" >/dev/null
 set +o pipefail
 first_entry="$(zipinfo -1 "$zip_path" | head -n 1 || true)"
 set -o pipefail
