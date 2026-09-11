@@ -61,6 +61,8 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "this" {
   }
 }
 
+# Provider 6.x requires at least one tiering block. Delayed archive is set past
+# retention so objects stay in instant-access tiers until lifecycle expiry.
 resource "aws_s3_bucket_intelligent_tiering_configuration" "entire_bucket" {
   bucket = aws_s3_bucket.this.id
   name   = "entire-bucket"
@@ -68,12 +70,7 @@ resource "aws_s3_bucket_intelligent_tiering_configuration" "entire_bucket" {
 
   tiering {
     access_tier = "ARCHIVE_ACCESS"
-    days        = 90
-  }
-
-  tiering {
-    access_tier = "DEEP_ARCHIVE_ACCESS"
-    days        = 180
+    days        = max(var.retention_days + 1, 90)
   }
 }
 
