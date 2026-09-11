@@ -1,5 +1,7 @@
 #!/usr/bin/env bats
 # Tests for scripts/end-user/jump-host-ssm.sh (list/connect discovery).
+# Run against every distinct Bash we can find: PATH bash (Linux/WSL/Homebrew)
+# and /bin/bash (macOS 3.2, or the system Bash on Linux).
 
 setup() {
   export REPO_ROOT="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)"
@@ -47,73 +49,80 @@ teardown() {
   rm -rf "${FAKE_AWS_DIR:-}"
 }
 
+# PATH `bash` plus `/bin/bash` when they resolve to different files.
+bash_interpreters() {
+  local cand resolved prev=""
+  for cand in bash /bin/bash; do
+    resolved="$(command -v "$cand" 2>/dev/null || true)"
+    [[ -n "$resolved" && -x "$resolved" && "$resolved" != "$prev" ]] || continue
+    prev="$resolved"
+    printf '%s\n' "$resolved"
+  done
+}
+
 run_list() {
   local bash_bin="$1"
   shift
   run "$bash_bin" ./scripts/end-user/jump-host-ssm.sh list "$@"
+  echo "interpreter=$bash_bin version=$("$bash_bin" -c 'echo "$BASH_VERSION"')"
   echo "status=$status output=$output"
 }
 
-# macOS ships Bash 3.2; empty-array expansion under `set -u` is the list failure mode.
-skip_unless_bash32() {
-  if [[ ! -x /bin/bash ]]; then
-    skip "/bin/bash not available"
-  fi
-  local major
-  major="$(/bin/bash -c 'echo ${BASH_VERSINFO[0]}')"
-  if [[ "$major" -ge 4 ]]; then
-    skip "/bin/bash is ${major}, not 3.2"
-  fi
-}
-
-@test "list with no --tag and no instances succeeds on bash 3.2 with nounset" {
-  skip_unless_bash32
+@test "list with no --tag and no instances succeeds on every bash" {
   export FAKE_AWS_INSTANCES=empty
-  run_list /bin/bash --region us-west-2
-  [[ "$status" -eq 0 ]]
-  [[ "$output" == *"No matching running jump hosts"* ]]
-  [[ "$output" != *"unbound variable"* ]]
-  [[ "$output" != *"unary operator expected"* ]]
+  local bin
+  while IFS= read -r bin; do
+    run_list "$bin" --region us-west-2
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"No matching running jump hosts (JumpHost=true)."* ]]
+    [[ "$output" != *"unbound variable"* ]]
+    [[ "$output" != *"unary operator expected"* ]]
+  done < <(bash_interpreters)
 }
 
-@test "list with no --tag and no instances succeeds" {
+@test "list with --tag and no instances succeeds on every bash" {
   export FAKE_AWS_INSTANCES=empty
-  run_list bash --region us-west-2
-  [[ "$status" -eq 0 ]]
-  [[ "$output" == *"No matching running jump hosts (JumpHost=true)."* ]]
+  local bin
+  while IFS= read -r bin; do
+    run_list "$bin" --region us-west-2 --tag Environment=stage
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"with given --tag filters"* ]]
+    [[ "$output" != *"unbound variable"* ]]
+  done < <(bash_interpreters)
 }
 
-@test "list with --tag and no instances succeeds" {
-  export FAKE_AWS_INSTANCES=empty
-  run_list bash --region us-west-2 --tag Environment=stage
-  [[ "$status" -eq 0 ]]
-  [[ "$output" == *"with given --tag filters"* ]]
-}
-
-@test "list prints matching instances" {
+@test "list prints matching instances on every bash" {
   export FAKE_AWS_INSTANCES=two
-  run_list bash --region us-west-2
-  [[ "$status" -eq 0 ]]
-  [[ "$output" == *"INSTANCE_ID"* ]]
-  [[ "$output" == *"i-0123456789abcdef0"* ]]
-  [[ "$output" == *"jump-core-01"* ]]
-  [[ "$output" == *"i-0fedcba9876543210"* ]]
-  [[ "$output" == *"jump-core-02"* ]]
+  local bin
+  while IFS= read -r bin; do
+    run_list "$bin" --region us-west-2
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"INSTANCE_ID"* ]]
+    [[ "$output" == *"i-0123456789abcdef0"* ]]
+    [[ "$output" == *"jump-core-01"* ]]
+    [[ "$output" == *"i-0fedcba9876543210"* ]]
+    [[ "$output" == *"jump-core-02"* ]]
+  done < <(bash_interpreters)
 }
 
-@test "list --name-contains filters instance name tags" {
+@test "list --name-contains filters instance name tags on every bash" {
   export FAKE_AWS_INSTANCES=two
-  run_list bash --region us-west-2 --name-contains core-02
-  [[ "$status" -eq 0 ]]
-  [[ "$output" == *"i-0fedcba9876543210"* ]]
-  [[ "$output" != *"i-0123456789abcdef0"* ]]
+  local bin
+  while IFS= read -r bin; do
+    run_list "$bin" --region us-west-2 --name-contains core-02
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"i-0fedcba9876543210"* ]]
+    [[ "$output" != *"i-0123456789abcdef0"* ]]
+  done < <(bash_interpreters)
 }
 
-@test "list on bash 3.2 prints instances and accepts --tag" {
-  skip_unless_bash32
+@test "list with --tag prints instances on every bash" {
   export FAKE_AWS_INSTANCES=one
-  run_list /bin/bash --region us-west-2 --tag Environment=stage
-  [[ "$status" -eq 0 ]]
-  [[ "$output" == *"i-0123456789abcdef0"* ]]
-  [[ "$output" == *"jump-core-01"* ]]
+  local bin
+  while IFS= read -r bin; do
+    run_list "$bin" --region us-west-2 --tag Environment=stage
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"i-0123456789abcdef0"* ]]
+    [[ "$output" == *"jump-core-01"* ]]
+  done < <(bash_interpreters)
 }

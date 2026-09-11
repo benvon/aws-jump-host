@@ -37,6 +37,8 @@ chmod +x ~/bin/jump-host-ssm.sh
 
 Ensure the directory is on your `PATH`, or invoke it with a full path.
 
+The script is Bash (not POSIX `sh`). It works with macOS `/bin/bash` 3.2 and with Bash 4+ on Linux and WSL. Run it directly or with `bash jump-host-ssm.sh`, not `sh`.
+
 ### 3. Configure your profile and region
 
 Set the profile and region your admin told you to use:
