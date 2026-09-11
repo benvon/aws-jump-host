@@ -158,11 +158,12 @@ region_dir="$live_dir/$env_name/$subenv_name/$aws_region"
 observability_dir="$region_dir/observability"
 endpoints_dir="$region_dir/vpc-endpoints"
 jump_hosts_dir="$region_dir/jump-hosts"
+log_transfer_dir="$region_dir/log-transfer"
 ssm_self_management_dir="$region_dir/ssm-self-management"
 inventory_path="${REPO_ROOT}/ansible/inventory/generated-${env_name}-${subenv_name}-${aws_region}.yml"
 expected_log_group="/aws/ssm/jump-host/${env_name}/${subenv_name}/${aws_region}"
 
-required_dirs=("$region_dir" "$observability_dir" "$endpoints_dir" "$jump_hosts_dir")
+required_dirs=("$region_dir" "$observability_dir" "$endpoints_dir" "$jump_hosts_dir" "$log_transfer_dir")
 if [[ "$ssm_self_management" == "true" ]]; then
   required_dirs+=("$ssm_self_management_dir")
 fi
@@ -267,6 +268,25 @@ resolve_ssm_transfer_bucket() {
   echo "$bucket"
 }
 
+resolve_log_transfer_outputs() {
+  local bucket region
+  if ! bucket="$(terragrunt --working-dir "$log_transfer_dir" output -raw bucket_name 2>/dev/null)"; then
+    echo ""
+    return 0
+  fi
+  if ! region="$(terragrunt --working-dir "$log_transfer_dir" output -raw region 2>/dev/null)"; then
+    echo ""
+    return 0
+  fi
+  bucket="$(printf '%s' "$bucket" | tr -d '\n\r')"
+  region="$(printf '%s' "$region" | tr -d '\n\r')"
+  if [[ -z "$bucket" || -z "$region" ]]; then
+    echo ""
+    return 0
+  fi
+  printf '%s\t%s\n' "$bucket" "$region"
+}
+
 check_ssm_transfer_bucket_access() {
   local bucket="$1"
   if ! command -v aws >/dev/null 2>&1; then
@@ -349,6 +369,15 @@ run_ansible() {
     extra+=(--extra-vars "@$users_vars")
   fi
 
+  local log_xfer
+  log_xfer="$(resolve_log_transfer_outputs || true)"
+  if [[ -n "$log_xfer" ]]; then
+    extra+=(--extra-vars "jump_host_log_transfer_bucket=${log_xfer%%$'\t'*}")
+    extra+=(--extra-vars "jump_host_log_transfer_region=${log_xfer#*$'\t'}")
+  else
+    printf "\n==> [ansible/%s] WARNING: log-transfer outputs unavailable; /etc/jump-host-log-transfer-* will be empty until that stack is applied.\n" "$playbook" >&2
+  fi
+
   if [[ -n "$env_name" ]]; then
     extra+=(--extra-vars "jump_host_environment=${env_name}")
   fi
@@ -376,6 +405,7 @@ case "$command_name" in
     fi
     run_tg "$endpoints_dir" init
     run_tg "$jump_hosts_dir" init
+    run_tg "$log_transfer_dir" init
     ;;
 
   check)
@@ -409,6 +439,7 @@ case "$command_name" in
     run_tg "$observability_dir" plan
     run_tg "$endpoints_dir" plan
     run_tg "$jump_hosts_dir" plan
+    run_tg "$log_transfer_dir" plan
 
     run_ansible "jump_hosts.yml" "true"
     ;;
@@ -419,6 +450,7 @@ case "$command_name" in
     run_tg_apply "$observability_dir"
     run_tg_apply "$endpoints_dir"
     run_tg_apply "$jump_hosts_dir"
+    run_tg_apply "$log_transfer_dir"
 
     run_ansible "jump_hosts.yml"
     ;;
@@ -437,6 +469,7 @@ case "$command_name" in
       echo "Skipping Ansible decommission hooks (no --users-vars provided)."
     fi
 
+    run_tg_destroy "$log_transfer_dir"
     run_tg_destroy "$jump_hosts_dir"
     run_tg_destroy "$endpoints_dir"
     run_tg_destroy "$observability_dir"

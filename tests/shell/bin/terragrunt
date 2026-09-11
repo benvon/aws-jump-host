@@ -30,6 +30,10 @@ fi
 
 if [[ "${1:-}" == output && "${2:-}" == -json ]]; then
   if [[ "${3:-}" == hosts ]]; then
+    if [[ "$scenario" == "hosts_empty" ]]; then
+      echo '{}'
+      exit 0
+    fi
     if [[ "$scenario" == "hosts_ok" ]]; then
       jq -n -c '{ "core-01": { instance_id: "i-abc", private_ip: "10.0.0.5", access_profile: "ops" } }'
       exit 0
@@ -42,6 +46,21 @@ if [[ "${1:-}" == output && "${2:-}" == -json ]]; then
     exit 0
   fi
   echo "fake: output -json unavailable" >&2
+  exit 1
+fi
+
+if [[ "${1:-}" == output && "${2:-}" == -raw ]]; then
+  case "${3:-}" in
+    bucket_name)
+      echo "example-log-transfer-bucket"
+      exit 0
+      ;;
+    region)
+      echo "us-east-1"
+      exit 0
+      ;;
+  esac
+  echo "fake: output -raw ${3:-} unavailable" >&2
   exit 1
 fi
 
