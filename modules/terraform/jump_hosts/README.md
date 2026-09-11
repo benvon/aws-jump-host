@@ -54,3 +54,5 @@ Home EBS volumes are separate resources from instances, so replacing an instance
 - `hosts`: metadata map containing instance IDs, private IPs, AZ, and home volume IDs.
 - `created_security_group_ids`: SG IDs created when host SGs were not supplied.
 - `instance_profile_arn`: IAM profile ARN attached to instances.
+- `instance_role_arn`: IAM role ARN assumed by jump host EC2 instances.
+- `instance_role_name`: IAM role name assumed by jump host EC2 instances.
