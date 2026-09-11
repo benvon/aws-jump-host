@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# Jump-host helper: zip caller paths, multipart-upload to the log-transfer bucket, print console URL.
+set -euo pipefail
+
+die() {
+  echo "Error: $*" >&2
+  exit 1
+}
+
+trim_file() {
+  local f="$1"
+  [[ -r "$f" ]] || return 0
+  tr -d '\n\r' <"$f" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+}
+
+[[ $# -ge 1 ]] || die "Usage: log-transfer <path> [path...]"
+
+for p in "$@"; do
+  [[ -e "$p" && -r "$p" ]] || die "Path missing or unreadable: $p"
+done
+
+command -v zip >/dev/null 2>&1 || die "zip not found on PATH."
+command -v zipinfo >/dev/null 2>&1 || die "zipinfo not found on PATH."
+command -v aws >/dev/null 2>&1 || die "aws CLI not found on PATH."
+
+bucket="${JUMP_HOST_LOG_TRANSFER_BUCKET:-}"
+region="${JUMP_HOST_LOG_TRANSFER_REGION:-}"
+if [[ -z "$bucket" ]]; then
+  bucket="$(trim_file "${JUMP_HOST_LOG_TRANSFER_BUCKET_FILE:-/etc/jump-host-log-transfer-bucket}")"
+fi
+if [[ -z "$region" ]]; then
+  region="$(trim_file "${JUMP_HOST_LOG_TRANSFER_REGION_FILE:-/etc/jump-host-log-transfer-region}")"
+fi
+[[ -n "$bucket" ]] || die "No log-transfer bucket configured (set JUMP_HOST_LOG_TRANSFER_BUCKET or /etc/jump-host-log-transfer-bucket)."
+[[ -n "$region" ]] || die "No log-transfer region configured (set JUMP_HOST_LOG_TRANSFER_REGION or /etc/jump-host-log-transfer-region)."
+
+[[ -n "${HOME:-}" ]] || die "HOME is not set; cannot write zip cache."
+
+user_name="$(id -un)"
+host_name="$(hostname -s 2>/dev/null || hostname)"
+ts="$(date -u +%Y%m%dT%H%M%SZ)"
+key="${user_name}/${ts}-${host_name}.zip"
+
+work_dir="${HOME}/.cache/log-transfer/$$"
+mkdir -p "$work_dir"
+zip_path="${work_dir}/archive.zip"
+aws_config="${work_dir}/aws-config"
+cleanup() { rm -rf "$work_dir"; }
+trap cleanup EXIT
+
+zip -r "$zip_path" "$@" >/dev/null
+zipinfo -1 "$zip_path" | grep -q . || die "Zip archive is empty."
+
+cat >"$aws_config" <<'EOF'
+[default]
+s3 =
+    multipart_threshold = 16MB
+    multipart_chunksize = 64MB
+    max_concurrent_requests = 4
+EOF
+
+env -u AWS_PROFILE -u AWS_DEFAULT_PROFILE \
+  AWS_CONFIG_FILE="$aws_config" \
+  aws s3 cp "$zip_path" "s3://${bucket}/${key}" \
+    --region "$region" \
+    --only-show-errors
+
+printf 'https://s3.console.aws.amazon.com/s3/object/%s?region=%s&prefix=%s\n' "$bucket" "$region" "$key"
