@@ -28,6 +28,18 @@ variable "run_as_default_user" {
   default     = ""
 }
 
+variable "linux_shell_profile" {
+  description = "Session Manager inputs.shellProfile.linux (POSIX sh, max 512 characters). null uses the module default: source jump-host-login-env and jump-host-path profile.d snippets (POSIX-safe PATH script prepends ~/bin when HOME is set) then cd to $HOME and exec bash -i; stderr discarded if snippets missing before Ansible bootstrap. Set to \"\" for stock /bin/sh only (no automatic cd/bash)."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.linux_shell_profile == null ? true : length(var.linux_shell_profile) <= 512
+    error_message = "linux_shell_profile must be at most 512 characters (AWS Session Manager limit)."
+  }
+}
+
 variable "session_data_kms_key_id" {
   description = "KMS key ID/ARN/alias used by Session Manager document inputs.kmsKeyId for session data encryption. Defaults to AWS managed alias/aws/ssm."
   type        = string

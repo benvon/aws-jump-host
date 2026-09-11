@@ -47,6 +47,8 @@ module "jump_hosts" {
 > automatically, even when `restrict_egress = true` and `egress_rules = []`, to ensure SSM
 > Session Manager connectivity is never broken by the egress setting.
 
+Home EBS volumes are separate resources from instances, so replacing an instance reattaches the same volume when state is unchanged. Terraform does **not** allow `lifecycle.prevent_destroy` to be driven by a variable (it must be a literal), so this module does not expose a toggle for that. To hard-block destroys, add your own wrapper resource or organization guardrails (for example AWS Backup, SCPs, or a forked copy of this module with `lifecycle { prevent_destroy = true }` as a fixed literal on `aws_ebs_volume.home`).
+
 ## Outputs
 
 - `hosts`: metadata map containing instance IDs, private IPs, AZ, and home volume IDs.

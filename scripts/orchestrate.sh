@@ -85,7 +85,7 @@ log_ansible_action() {
 
 run_tg_apply_preflight() {
   local stack_dir="$1"
-  # Preflight self-management remediation should be non-interactive so plan/apply/configure
+  # Preflight self-management remediation should be non-interactive so plan/check/configure
   # can run end-to-end without extra prompts.
   run_tg "$stack_dir" init -reconfigure
   TG_DOWNLOAD_DIR="$TG_DOWNLOAD_DIR" TG_BACKEND_BOOTSTRAP=true TG_NO_AUTO_INIT=true terragrunt --working-dir "$stack_dir" apply -auto-approve
@@ -321,6 +321,10 @@ run_ansible() {
     --output "$inventory_path"
 
   host_count="$(jq -r '.all.children.jump_hosts.hosts | length' "$inventory_path")"
+  if [[ "$host_count" -eq 0 ]]; then
+    printf "\n==> [ansible/%s] WARNING: inventory has 0 jump hosts — the play is skipped (no roles or tasks run, including session_comfort).\n" "$playbook" >&2
+    printf "    Fix: ensure Terraform apply created instances and terragrunt output 'hosts' is non-empty for %s\n" "$jump_hosts_dir" >&2
+  fi
   if [[ "$host_count" -gt 0 ]]; then
     ssm_transfer_bucket="$(resolve_ssm_transfer_bucket)"
     check_ssm_transfer_bucket_access "$ssm_transfer_bucket"
@@ -345,10 +349,16 @@ run_ansible() {
     extra+=(--extra-vars "@$users_vars")
   fi
 
+  if [[ -n "$env_name" ]]; then
+    extra+=(--extra-vars "jump_host_environment=${env_name}")
+  fi
+
   if [[ "$check_mode" == "true" ]]; then
     extra+=(--check)
   fi
 
+  # Resolve roles_path (ansible/roles) from repo ansible.cfg even if cwd is not REPO_ROOT.
+  ANSIBLE_CONFIG="${REPO_ROOT}/ansible.cfg" \
   AWS_REGION="$aws_region" \
   OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES \
   ansible-playbook \

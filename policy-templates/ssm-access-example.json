@@ -36,13 +36,28 @@
       "Resource": "arn:aws:ssm:*:*:document/SSM-SessionManagerRunShell"
     },
     {
-      "Sid": "AllowDescribeForSessionTargets",
+      "Sid": "AllowDescribeSsmInstanceInformationForJumpHosts",
       "Effect": "Allow",
-      "Action": [
-        "ssm:DescribeInstanceInformation",
-        "ec2:DescribeInstances"
-      ],
-      "Resource": "*"
+      "Action": "ssm:DescribeInstanceInformation",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "ssm:resourceTag/JumpHost": "true",
+          "ssm:resourceTag/AccessProfile": "${aws:PrincipalTag/AccessProfile}"
+        }
+      }
+    },
+    {
+      "Sid": "AllowDescribeEc2InstancesForJumpHosts",
+      "Effect": "Allow",
+      "Action": "ec2:DescribeInstances",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "ec2:ResourceTag/JumpHost": "true",
+          "ec2:ResourceTag/AccessProfile": "${aws:PrincipalTag/AccessProfile}"
+        }
+      }
     }
   ]
 }
