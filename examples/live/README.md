@@ -15,6 +15,7 @@ This directory contains reference-only Terragrunt configurations.
 - `observability`
 - `ssm-self-management` (optional; in-account Session Manager setting management)
 - `vpc-endpoints`
+- `log-transfer`
 - `jump-hosts`
 
 ## Suggested Adoption

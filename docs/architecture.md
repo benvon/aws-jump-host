@@ -28,10 +28,12 @@ The resulting platform provisions private jump hosts reachable through AWS Sessi
 - `modules/terraform/observability`: CloudWatch log group and optional KMS key; optional metric filter and alarm hooks (disabled by default) for future SNS paging.
 - `modules/terraform/ssm_session_manager_settings`: Session Manager account-level preferences via `SSM-SessionManagerRunShell`.
 - `modules/terraform/remote_state_s3`: encrypted versioned S3 state bucket.
+- `modules/terraform/log_transfer`: private per-environment bucket for operator log archives; instance-role upload and console download via `users[].iam_role_arns`.
 
 ### Terragrunt
 
 - Canonical hierarchy: `<live-root>/<env>/<subenv>/<region>/<stack>`.
+- Required stacks beside `jump-hosts` include `log-transfer` (dedicated S3 bucket for operator log archives).
 - Root config in `terragrunt/root.hcl` provides provider generation, assume-role wiring, common tags, and backend configuration.
 - Example stacks under `examples/live/` are reference blueprints and should be copied into an external inputs repo.
 

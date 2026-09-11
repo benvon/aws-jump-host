@@ -156,6 +156,11 @@ Per-environment jump-host login helpers (`/usr/local/bin/awslogin`, `/usr/local/
 - `AWS_PROFILE` (and typically `AWS_REGION`) in `jump_host_login_env` / `jump_host_login_env_extra`
 - `jump_host_eks_cluster_name` or `jump_host_eks_cluster_name_extra` for that environment’s EKS cluster (written to `/etc/jump-host-eks-cluster`; `kubelogin` errors if the file is missing or empty)
 
+Per-environment `log-transfer` (S3 bucket + `/usr/local/bin/log-transfer`) needs:
+
+- `users[].iam_role_arns` in extra-vars so those principals can `s3:GetObject` / `s3:ListBucket` via the **bucket policy** (Identity Center reserved roles are not mutated). If the list is empty, uploads still work but console downloads return 403 until ARNs are set and `log-transfer` is re-applied.
+- `orchestrate.sh` apply/configure after the `log-transfer` stack exists so Ansible writes `/etc/jump-host-log-transfer-bucket` and `/etc/jump-host-log-transfer-region`.
+
 ## Local and CI Validation
 
 Local:

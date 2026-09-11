@@ -93,6 +93,16 @@ Both read **`AWS_PROFILE`** and **`AWS_REGION`** from the environment (usually s
 
 `kubelogin` reads the cluster name from **`/etc/jump-host-eks-cluster`** and uses it as `--name`, `--alias`, and the kubectl context. If that file is missing or empty, `kubelogin` exits with an error; `awslogin` still works. Admins set the cluster name with `jump_host_eks_cluster_name` (see `docs/consumer-guide.md`).
 
+### On the jump host: `log-transfer`
+
+Package local files or directories and upload them for browser download via the AWS console:
+
+```bash
+log-transfer /path/to/file.log ./coredump.dir
+```
+
+The command prints an S3 console URL. Open it, sign in with SSO if prompted, and download the object. You need an IAM role listed in this environment’s `users.yaml` `iam_role_arns`. Archives expire after two years. You need free space on `/home` roughly equal to the zip size while it is being built.
+
 ### Choosing the Linux (OS) user for the session
 
 Session Manager **Run As** is how AWS picks the account on the instance (instead of the default `ssm-user`). In most organizations the OS user is **not** a free-form CLI choice. AWS resolves it in this order (see [Turn on Run As support for Linux and macOS managed nodes](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-preferences-run-as.html)):
