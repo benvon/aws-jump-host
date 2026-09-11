@@ -8,6 +8,11 @@ jump_host_login_env: {}
 # Set per environment in extra-vars (jump_host_eks_cluster_name or jump_host_eks_cluster_name_extra).
 jump_host_eks_cluster_name: ""
 
+# Log-transfer bucket/region for /usr/local/bin/log-transfer (written to /etc/jump-host-log-transfer-*).
+# orchestrate.sh configure sets these from the log-transfer stack outputs.
+jump_host_log_transfer_bucket: ""
+jump_host_log_transfer_region: ""
+
 users: []
 managed_user_uid_min: 1000
 managed_user_exclusions:

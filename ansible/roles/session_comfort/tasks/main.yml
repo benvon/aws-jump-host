@@ -34,6 +34,18 @@
         | default(jump_host_eks_cluster_name | default(session_comfort_eks_cluster_name))
         | trim
       }}
+    session_comfort_log_transfer_bucket_effective: >-
+      {{
+        jump_host_log_transfer_bucket_extra
+        | default(jump_host_log_transfer_bucket | default(session_comfort_log_transfer_bucket))
+        | trim
+      }}
+    session_comfort_log_transfer_region_effective: >-
+      {{
+        jump_host_log_transfer_region_extra
+        | default(jump_host_log_transfer_region | default(session_comfort_log_transfer_region))
+        | trim
+      }}
 
 - name: Set Helm archive architecture label
   ansible.builtin.set_fact:
@@ -110,7 +122,7 @@
         group: root
         mode: "0755"
 
-- name: Install jump-host AWS SSO and kubeconfig helpers
+- name: Install jump-host AWS SSO, kubeconfig, and log-transfer helpers
   ansible.builtin.copy:
     src: "{{ item }}"
     dest: "/usr/local/bin/{{ item }}"
@@ -120,6 +132,7 @@
   loop:
     - awslogin
     - kubelogin
+    - log-transfer
 
 - name: Install jump host profile.d PATH snippet (prefix/suffix dirs + ~/bin)
   ansible.builtin.template:
@@ -173,6 +186,36 @@
     path: /etc/jump-host-eks-cluster
     state: absent
   when: session_comfort_eks_cluster_effective | length == 0
+
+- name: Publish /etc/jump-host-log-transfer-bucket when configured
+  ansible.builtin.copy:
+    content: "{{ session_comfort_log_transfer_bucket_effective }}\n"
+    dest: /etc/jump-host-log-transfer-bucket
+    owner: root
+    group: root
+    mode: "0644"
+  when: session_comfort_log_transfer_bucket_effective | length > 0
+
+- name: Remove stale /etc/jump-host-log-transfer-bucket when empty
+  ansible.builtin.file:
+    path: /etc/jump-host-log-transfer-bucket
+    state: absent
+  when: session_comfort_log_transfer_bucket_effective | length == 0
+
+- name: Publish /etc/jump-host-log-transfer-region when configured
+  ansible.builtin.copy:
+    content: "{{ session_comfort_log_transfer_region_effective }}\n"
+    dest: /etc/jump-host-log-transfer-region
+    owner: root
+    group: root
+    mode: "0644"
+  when: session_comfort_log_transfer_region_effective | length > 0
+
+- name: Remove stale /etc/jump-host-log-transfer-region when empty
+  ansible.builtin.file:
+    path: /etc/jump-host-log-transfer-region
+    state: absent
+  when: session_comfort_log_transfer_region_effective | length == 0
 
 - name: Install jump host profile.d prompt snippet (zzz- prefix runs after other profile.d)
   ansible.builtin.template:

@@ -5,6 +5,8 @@ session_comfort_kubectl_channel: v1.32
 session_comfort_helm_version: "3.14.4"
 # Fallback for /etc/jump-host-eks-cluster; set jump_host_eks_cluster_name per environment.
 session_comfort_eks_cluster_name: ""
+session_comfort_log_transfer_bucket: ""
+session_comfort_log_transfer_region: ""
 
 session_comfort_base_packages:
   - git
