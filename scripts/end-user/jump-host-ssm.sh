@@ -2,6 +2,9 @@
 # End-user helper: SSO login reminder, Session Manager plugin check, and jump host
 # discovery by tags (default: JumpHost=true, running). Distribute this script to
 # operators; they need AWS CLI v2 and the Session Manager plugin installed.
+#
+# Compatible with Bash 3.2 (macOS /bin/bash) and Bash 4+ (Linux, WSL). Under
+# `set -u`, empty `"${arr[@]}"` is unbound on 3.2; use ${arr[@]+"${arr[@]}"}.
 set -euo pipefail
 
 usage() {
@@ -52,7 +55,8 @@ aws_cli() {
   if [[ -n "${region:-}" ]]; then
     args+=(--region "${region}")
   fi
-  aws "${args[@]}" "$@"
+  # shellcheck disable=SC2086
+  aws ${args[@]+"${args[@]}"} "$@"
 }
 
 caller_identity() {
@@ -131,7 +135,7 @@ build_filters() {
     "Name=instance-state-name,Values=running"
   )
   local pair key val
-  for pair in "${extra_tag_pairs[@]}"; do
+  for pair in ${extra_tag_pairs[@]+"${extra_tag_pairs[@]}"}; do
     [[ "$pair" == *"="* ]] || die "Invalid --tag (expected KEY=VALUE): $pair"
     key="${pair%%=*}"
     val="${pair#*=}"
@@ -155,27 +159,33 @@ read_instance_row() {
   IFS=$'\t' read -r id name az <<<"${line}" || true
 }
 
-cmd_list() {
-  require_aws
-  resolve_region
-  caller_identity || die "Not logged in. Run: $0 login   (SSO) or refresh credentials."
+# Sets caller-scoped `filtered` from describe-instances plus optional `name_contains`.
+filter_matching_instance_lines() {
   local -a lines=()
-  local line
+  local line id name az
   while IFS= read -r line || [[ -n "${line}" ]]; do
     [[ -z "${line}" ]] && continue
     lines+=("${line}")
   done < <(list_instance_lines || true)
 
-  local -a filtered=()
-  local id name az
-  for line in "${lines[@]}"; do
+  filtered=()
+  for line in ${lines[@]+"${lines[@]}"}; do
     read_instance_row "${line}"
     [[ -n "${id:-}" ]] || continue
-    if [[ -n "${name_contains:-}" ]]; then
-      [[ "${name:-}" == *"${name_contains}"* ]] || continue
+    if [[ -n "${name_contains:-}" && "${name:-}" != *"${name_contains}"* ]]; then
+      continue
     fi
     filtered+=("${line}")
   done
+}
+
+cmd_list() {
+  require_aws
+  resolve_region
+  caller_identity || die "Not logged in. Run: $0 login   (SSO) or refresh credentials."
+  local -a filtered=()
+  local line id name az
+  filter_matching_instance_lines
   if [[ ${#filtered[@]} -eq 0 ]]; then
     if [[ ${#extra_tag_pairs[@]} -gt 0 ]]; then
       echo "No matching running jump hosts (JumpHost=true with given --tag filters)."
@@ -185,7 +195,7 @@ cmd_list() {
     exit 0
   fi
   printf '%-22s %-50s %s\n' "INSTANCE_ID" "NAME_TAG" "AZ"
-  for line in "${filtered[@]}"; do
+  for line in ${filtered[@]+"${filtered[@]}"}; do
     read_instance_row "${line}"
     printf '%-22s %-50s %s\n' "$id" "${name:-}" "${az:-}"
   done
@@ -202,36 +212,22 @@ pick_instance_id() {
     return
   fi
 
-  local -a lines=()
-  local line
-  while IFS= read -r line || [[ -n "${line}" ]]; do
-    [[ -z "${line}" ]] && continue
-    lines+=("${line}")
-  done < <(list_instance_lines || true)
-
-  local -a ids=()
+  local -a filtered=()
   local id name az
-  for line in "${lines[@]}"; do
-    read_instance_row "${line}"
-    [[ -n "${id:-}" ]] || continue
-    if [[ -n "${name_contains:-}" ]]; then
-      [[ "${name:-}" == *"${name_contains}"* ]] || continue
-    fi
-    ids+=("$id")
-  done
+  filter_matching_instance_lines
 
-  if [[ ${#ids[@]} -eq 0 ]]; then
+  if [[ ${#filtered[@]} -eq 0 ]]; then
     die "No matching running jump hosts. Narrow filters with --tag or check your account/region."
   fi
-  if [[ ${#ids[@]} -gt 1 ]]; then
+  if [[ ${#filtered[@]} -gt 1 ]]; then
     echo "Multiple jump hosts match; choose one with --instance-id or narrow --tag / --name-contains:" >&2
     name_contains=""
     cmd_list >&2
     exit 2
   fi
-  local chosen="${ids[0]}"
-  [[ "${chosen}" =~ ^i-[0-9a-fA-F]+$ ]] || die "Could not parse instance id from EC2 output (got '${chosen}'). Try --instance-id."
-  echo "${chosen}"
+  read_instance_row "${filtered[0]}"
+  [[ "${id}" =~ ^i-[0-9a-fA-F]+$ ]] || die "Could not parse instance id from EC2 output (got '${id}'). Try --instance-id."
+  echo "${id}"
 }
 
 cmd_connect() {
