@@ -29,6 +29,8 @@ locals {
   ]
 }
 
+#tfsec:ignore:aws-s3-enable-bucket-logging Log-transfer archives do not use a separate S3 access-log bucket per design.
+#tfsec:ignore:aws-s3-enable-versioning Versioning is intentionally not enabled for ephemeral log archives.
 resource "aws_s3_bucket" "this" {
   #checkov:skip=CKV_AWS_18:Log-transfer archives do not use a separate S3 access-log bucket per design.
   #checkov:skip=CKV_AWS_21:Versioning is intentionally not enabled for ephemeral log archives.
@@ -49,6 +51,7 @@ resource "aws_s3_bucket_public_access_block" "this" {
   restrict_public_buckets = true
 }
 
+#tfsec:ignore:aws-s3-encryption-customer-key Log-transfer buckets intentionally use SSE-S3 (AES256), not a customer-managed KMS key.
 resource "aws_s3_bucket_server_side_encryption_configuration" "this" {
   #checkov:skip=CKV_AWS_145:Log-transfer buckets intentionally use SSE-S3 (AES256), not a customer-managed KMS key.
   bucket = aws_s3_bucket.this.id

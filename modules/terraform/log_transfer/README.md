@@ -25,3 +25,4 @@ Creates a private S3 bucket for jump-host log archives with multipart-friendly u
 - Empty `downloader_role_arns` omits the downloader statement from the bucket policy so Terraform does not emit an invalid principal.
 - Uploads use the `INTELLIGENT_TIERING` storage class; optional `ARCHIVE_ACCESS` tiering is clamped to at most 730 days (S3 API maximum).
 - Checkov skips (documented on resources): no customer-managed KMS (`CKV_AWS_145`), no access-log bucket (`CKV_AWS_18`), no versioning (`CKV_AWS_21`), no event notifications (`CKV2_AWS_62`), no cross-region replication (`CKV_AWS_144`).
+- tfsec skips (documented on resources): no customer-managed KMS (`aws-s3-encryption-customer-key`), no access-log bucket (`aws-s3-enable-bucket-logging`), no versioning (`aws-s3-enable-versioning`). Event notifications and CRR are covered by Checkov only (no matching tfsec rules in v1.28).
