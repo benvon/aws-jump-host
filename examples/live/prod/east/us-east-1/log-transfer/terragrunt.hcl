@@ -5,9 +5,11 @@ include "root" {
 
 locals {
   users_file = get_env("JUMP_HOST_USERS_VARS", try(find_in_parent_folders("ansible/users.yaml"), ""))
-  users      = local.users_file != "" ? try(yamldecode(file(local.users_file)).users, []) : []
+  users_data = local.users_file != "" ? yamldecode(file(local.users_file)) : {}
+  users      = try(local.users_data.users, [])
   downloader_role_arns = distinct(flatten([
-    for user in local.users : try(user.iam_role_arns, [])
+    for user in local.users :
+    try(user.state, "present") == "absent" ? [] : try(user.iam_role_arns, [])
   ]))
 }
 

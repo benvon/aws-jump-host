@@ -181,3 +181,40 @@ assert l != -1 and j != -1 and l < j, text
   ! grep -q 'jump_host_log_transfer_bucket=' "$ansible_log"
   rm -f "$log" "$ansible_log"
 }
+
+@test "orchestrate rejects a missing --users-vars file" {
+  run ./scripts/orchestrate.sh plan \
+    --live-dir ./examples/live \
+    --env dev \
+    --subenv east \
+    --region us-east-1 \
+    --users-vars /nonexistent/jump-host-users.yml
+  [[ "$status" -ne 0 ]]
+  [[ "$output" == *"users vars file not found"* ]]
+}
+
+@test "orchestrate configure applies log-transfer before ansible" {
+  export SKIP_ACCOUNT_CHECK=true
+  export SKIP_PREFLIGHT=true
+  export FAKE_TG_SCENARIO=hosts_empty
+  local log ansible_log
+  log="$(mktemp)"
+  ansible_log="$(mktemp)"
+  export FAKE_TG_LOG="$log"
+  export FAKE_ANSIBLE_LOG="$ansible_log"
+  run ./scripts/orchestrate.sh configure \
+    --live-dir ./examples/live \
+    --env dev \
+    --subenv east \
+    --region us-east-1 \
+    --auto-approve
+  [[ "$status" -eq 0 ]]
+  python3 -c '
+import pathlib, sys
+text = pathlib.Path(sys.argv[1]).read_text()
+assert "log-transfer" in text, text
+assert "apply" in text, text
+' "$log"
+  grep -q 'jump_host_log_transfer_bucket=example-log-transfer-bucket' "$ansible_log"
+  rm -f "$log" "$ansible_log"
+}

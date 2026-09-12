@@ -179,6 +179,10 @@ if [[ -n "$users_vars" ]]; then
   if [[ "$users_vars" != /* ]]; then
     users_vars="$(cd "$(dirname -- "$users_vars")" && pwd)/$(basename -- "$users_vars")"
   fi
+  if [[ ! -f "$users_vars" ]]; then
+    echo "Error: users vars file not found: $users_vars" >&2
+    exit 1
+  fi
   export JUMP_HOST_USERS_VARS="$users_vars"
 fi
 
@@ -470,6 +474,8 @@ case "$command_name" in
   configure)
     ensure_target_account_identity
     run_preflight
+    # Keep downloader IAM in sync with users.yaml on the documented user add/remove path.
+    run_tg_apply "$log_transfer_dir"
     run_ansible "jump_hosts.yml"
     ;;
 

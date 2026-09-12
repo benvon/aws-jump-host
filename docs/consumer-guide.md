@@ -108,9 +108,11 @@ By default, VPC endpoints include this private-EKS management baseline:
 
 To override defaults for a region, set `additional_interface_endpoint_services` in `region.hcl`.
 
-For host configuration changes without Terraform execution (for example user add/remove only):
+For host configuration changes that do not recreate jump hosts (for example user add/remove):
 
 - `./scripts/orchestrate.sh configure --live-dir ...`
+
+`configure` applies the `log-transfer` stack (so bucket-policy downloader grants match `users[].iam_role_arns`) and then runs Ansible. Other stacks are not applied. Use `--auto-approve` for non-interactive runs. Users with `state: absent` are omitted from the bucket policy.
 
 For teardown:
 
@@ -158,8 +160,8 @@ Per-environment jump-host login helpers (`/usr/local/bin/awslogin`, `/usr/local/
 
 Per-environment `log-transfer` (S3 bucket + `/usr/local/bin/log-transfer`) needs:
 
-- `users[].iam_role_arns` from the same extra-vars file as Ansible (`--users-vars`). `orchestrate.sh` exports that path as `JUMP_HOST_USERS_VARS` so the `log-transfer` stack’s bucket policy matches the operators you provision. If you run Terragrunt directly, set `JUMP_HOST_USERS_VARS` or keep `ansible/users.yaml` as an ancestor of the stack. If the list is empty, uploads still work but console downloads return 403 until ARNs are set and `log-transfer` is re-applied. Identity Center reserved roles are not mutated.
-- `orchestrate.sh` apply/configure after the `log-transfer` stack exists so Ansible writes `/etc/jump-host-log-transfer-bucket` and `/etc/jump-host-log-transfer-region`. A failed Terragrunt output lookup on apply/configure is an error (it will not wipe those files). `plan` leaves existing host files unchanged when outputs are unavailable.
+- `users[].iam_role_arns` from the same extra-vars file as Ansible (`--users-vars`). `orchestrate.sh` exports that path as `JUMP_HOST_USERS_VARS` so the `log-transfer` stack’s bucket policy matches the operators you provision. Users with `state: absent` are omitted. A missing or invalid selected users file fails closed (Terragrunt does not treat it as `users: []`). If you run Terragrunt directly, set `JUMP_HOST_USERS_VARS` or keep `ansible/users.yaml` as an ancestor of the stack. If the list is empty, uploads still work but console downloads return 403 until ARNs are set and `log-transfer` is re-applied. Identity Center reserved roles are not mutated.
+- `orchestrate.sh apply` or `configure` after the `log-transfer` stack exists so Ansible writes `/etc/jump-host-log-transfer-bucket` and `/etc/jump-host-log-transfer-region`. `configure` also re-applies `log-transfer` so add/remove of `iam_role_arns` does not require a full infra apply. A failed Terragrunt output lookup on apply/configure is an error (it will not wipe those files). `plan` leaves existing host files unchanged when outputs are unavailable.
 
 **Upgrade:** Existing live repos must add `<region>/log-transfer/` (copy from `examples/live/.../log-transfer/`). `log-transfer` is in `required_dirs`; without that directory, `orchestrate.sh` refuses to run.
 
