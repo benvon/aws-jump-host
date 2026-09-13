@@ -17,13 +17,11 @@ locals {
 
   instance_upload_object_actions = [
     "s3:PutObject",
-    "s3:GetObject",
     "s3:AbortMultipartUpload",
     "s3:ListMultipartUploadParts",
   ]
 
   instance_upload_bucket_actions = [
-    "s3:ListBucket",
     "s3:GetBucketLocation",
     "s3:ListBucketMultipartUploads",
   ]

@@ -32,6 +32,70 @@ require_cmd() {
   fi
 }
 
+# Match ansible/roles/user_accounts schema so log-transfer bucket policy is not
+# applied for records Ansible will later reject.
+validate_users_vars_file() {
+  local file="$1"
+  require_cmd python3
+  python3 - "$file" <<'PY'
+import sys
+
+try:
+    import yaml
+except ImportError:
+    sys.stderr.write("Error: PyYAML is required to validate --users-vars (install ansible-core).\n")
+    sys.exit(1)
+
+path = sys.argv[1]
+try:
+    with open(path, encoding="utf-8") as fh:
+        data = yaml.safe_load(fh)
+except yaml.YAMLError as exc:
+    sys.stderr.write("Error: users vars file is not valid YAML: %s\n" % exc)
+    sys.exit(1)
+except OSError as exc:
+    sys.stderr.write("Error: could not read users vars file: %s\n" % exc)
+    sys.exit(1)
+
+if data is None:
+    data = {}
+if not isinstance(data, dict):
+    sys.stderr.write("Error: users vars file must be a YAML mapping.\n")
+    sys.exit(1)
+
+users = data.get("users", [])
+if users is None:
+    users = []
+if not isinstance(users, list):
+    sys.stderr.write("Error: users must be a list.\n")
+    sys.exit(1)
+
+allowed_sudo = ("none", "ops", "admin")
+allowed_state = ("present", "absent")
+for index, user in enumerate(users):
+    if not isinstance(user, dict):
+        sys.stderr.write("Error: invalid user schema for users[%d]: must be a mapping.\n" % index)
+        sys.exit(1)
+    username = user.get("username")
+    label = username if isinstance(username, str) and username else "users[%d]" % index
+    if not isinstance(username, str) or not username:
+        sys.stderr.write("Error: invalid user schema for %s: username must be a string.\n" % label)
+        sys.exit(1)
+    groups = user.get("groups")
+    if groups is None or isinstance(groups, (str, bytes)) or not hasattr(groups, "__iter__"):
+        sys.stderr.write("Error: invalid user schema for %s: groups must be a list.\n" % label)
+        sys.exit(1)
+    sudo_profile = user.get("sudo_profile")
+    if sudo_profile not in allowed_sudo:
+        sys.stderr.write("Error: invalid user schema for %s: sudo_profile must be none, ops, or admin.\n" % label)
+        sys.exit(1)
+    state = user.get("state")
+    if state is not None and state not in allowed_state:
+        sys.stderr.write("Error: invalid user schema for %s: state must be present or absent.\n" % label)
+        sys.exit(1)
+PY
+}
+
 stack_label() {
   local stack_dir="$1"
   if [[ "$stack_dir" == "${REPO_ROOT}/"* ]]; then
@@ -188,6 +252,7 @@ if [[ -n "$users_vars" ]]; then
     echo "Error: users vars file not found: $users_vars" >&2
     exit 1
   fi
+  validate_users_vars_file "$users_vars"
   export JUMP_HOST_USERS_VARS="$users_vars"
 else
   export JUMP_HOST_USERS_VARS=""

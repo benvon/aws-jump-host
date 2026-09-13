@@ -16,7 +16,7 @@
 - Download is an S3 console object URL, never a presigned URL.
 - One bucket per env/subenv/region; do not reuse `state_bucket` or the Ansible SSM transfer bucket.
 - Bucket: all four Block Public Access flags, SSE-S3 (`AES256`) with bucket keys, Intelligent-Tiering, expire after 730 days, abort incomplete multipart after 7 days, HTTPS-only deny. No CMK, no access-log bucket, no versioning, no CRR, no `aws:SourceVpce` on downloader `GetObject`.
-- Uploader IAM (instance role, identity + bucket policy): `s3:PutObject`, `s3:GetObject`, `s3:AbortMultipartUpload`, `s3:ListMultipartUploadParts`, `s3:ListBucketMultipartUploads`, `s3:ListBucket`, `s3:GetBucketLocation`.
+- Uploader IAM (instance role, identity + bucket policy): `s3:PutObject`, `s3:AbortMultipartUpload`, `s3:ListMultipartUploadParts`, `s3:ListBucketMultipartUploads`, `s3:GetBucketLocation`. Do not grant `s3:GetObject` or `s3:ListBucket` on the shared instance role.
 - Downloader IAM (bucket policy, `users[].iam_role_arns`): `s3:GetObject`, `s3:ListBucket`, `s3:GetBucketLocation`. Empty ARN list is valid (uploads work; console GetObject 403).
 - Upload uses instance role: unset `AWS_PROFILE` and `AWS_DEFAULT_PROFILE` for `aws s3 cp`. Process-local `AWS_CONFIG_FILE` with `multipart_threshold = 16MB` and `multipart_chunksize = 64MB`.
 - Do not install AWS CLI in Ansible. `zip` is already in `session_comfort_base_packages`.

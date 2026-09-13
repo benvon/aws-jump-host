@@ -26,4 +26,12 @@ grep -q 'aws_ec2_managed_prefix_list' "$jh" \
 grep -q 'prefix_list_ids' "$jh" \
   || fail "jump_hosts default SG egress must allow the S3 prefix list for gateway-endpoint uploads"
 
+lt="$root/modules/terraform/log_transfer/main.tf"
+if grep -A8 'instance_upload_object_actions' "$lt" | grep -q 's3:GetObject'; then
+  fail "instance role must not grant s3:GetObject (downloaders use iam_role_arns)"
+fi
+if grep -A8 'instance_upload_bucket_actions' "$lt" | grep -q '"s3:ListBucket"'; then
+  fail "instance role must not grant s3:ListBucket (downloaders use iam_role_arns)"
+fi
+
 echo "log-transfer contract OK"

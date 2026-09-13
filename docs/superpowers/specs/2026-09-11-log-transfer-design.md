@@ -53,7 +53,7 @@ Creates:
 - Lifecycle: expire objects after `retention_days` (default 730); abort incomplete multipart after 7 days
 - Bucket policy:
   - Deny `s3:*` when `aws:SecureTransport` is false
-  - Allow instance role: `s3:PutObject` (covers create/upload-part/complete multipart), `s3:GetObject` (CLI head/etag), `s3:AbortMultipartUpload`, `s3:ListMultipartUploadParts`, `s3:ListBucketMultipartUploads`, `s3:ListBucket`, `s3:GetBucketLocation`
+  - Allow instance role: `s3:PutObject` (covers create/upload-part/complete multipart), `s3:AbortMultipartUpload`, `s3:ListMultipartUploadParts`, `s3:ListBucketMultipartUploads`, `s3:GetBucketLocation`. Do **not** grant `s3:GetObject` or `s3:ListBucket` to the shared instance role (every local user can use those credentials).
   - Allow each downloader role ARN: `s3:GetObject`, `s3:ListBucket`, `s3:GetBucketLocation` (console object page)
 - Inline IAM policy on the existing jump-host instance role with the same upload/multipart actions, resource-scoped to this bucket
 
