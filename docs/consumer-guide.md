@@ -124,7 +124,7 @@ Non-interactive CI or scripted applies should append `--auto-approve` to both `a
 
 External vars must follow:
 
-- `username` (required)
+- `username` (required, unique in the file)
 - `groups` (required list)
 - `sudo_profile` (required: `none|ops|admin`)
 - optional `state`, `shell`, `home`

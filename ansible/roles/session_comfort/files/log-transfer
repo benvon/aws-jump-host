@@ -43,8 +43,9 @@ suffix="$(od -An -N2 -tx1 /dev/urandom | tr -d ' \n' | tr 'A-F' 'a-f')"
 [[ ${#suffix} -eq 4 ]] || die "Could not generate a 4-character object-key suffix."
 key="${user_name}/${ts}-${host_name}-${suffix}.zip"
 
-work_dir="${HOME}/.cache/log-transfer/$$"
-mkdir -p "$work_dir"
+cache_root="${HOME}/.cache/log-transfer"
+mkdir -p "$cache_root"
+work_dir="$(mktemp -d "${cache_root}/run.XXXXXX")"
 zip_path="${work_dir}/archive.zip"
 aws_config="${work_dir}/aws-config"
 cleanup() { rm -rf "$work_dir"; }

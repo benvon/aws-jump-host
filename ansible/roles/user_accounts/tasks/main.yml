@@ -13,6 +13,12 @@
   loop_control:
     label: "{{ item.username | default('unknown') }}"
 
+- name: Reject duplicate usernames
+  ansible.builtin.assert:
+    that:
+      - (user_accounts_users | map(attribute='username') | list | length) == (user_accounts_users | map(attribute='username') | unique | list | length)
+    fail_msg: Duplicate username in users list; each Linux account must appear once.
+
 - name: Gather local passwd database
   ansible.builtin.getent:
     database: passwd

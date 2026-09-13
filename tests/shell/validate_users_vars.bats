@@ -83,6 +83,29 @@ EOF
   [[ "$output" == *"iam_role_arns must be a list of strings"* ]]
 }
 
+@test "validate_users_vars rejects duplicate usernames" {
+  local f
+  f="$(mktemp)"
+  cat >"$f" <<'EOF'
+users:
+  - username: alice
+    groups:
+      - wheel
+    sudo_profile: ops
+    iam_role_arns:
+      - arn:aws:iam::123456789012:role/alice
+  - username: alice
+    groups:
+      - wheel
+    sudo_profile: ops
+    state: absent
+EOF
+  run ./scripts/validate_users_vars.py "$f"
+  rm -f "$f"
+  [[ "$status" -ne 0 ]]
+  [[ "$output" == *"duplicate username"* ]]
+}
+
 @test "validate_users_vars rejects an explicitly null users list" {
   local f
   f="$(mktemp)"

@@ -205,6 +205,40 @@ EOF
   rm -f "$log" "$users"
 }
 
+@test "orchestrate rejects duplicate usernames before terragrunt" {
+  export SKIP_ACCOUNT_CHECK=true
+  export SKIP_PREFLIGHT=true
+  export FAKE_TG_SCENARIO=hosts_empty
+  local log users
+  log="$(mktemp)"
+  users="$(mktemp)"
+  cat >"$users" <<'EOF'
+users:
+  - username: alice
+    iam_role_arns:
+      - arn:aws:iam::123456789012:role/alice
+    groups:
+      - wheel
+    sudo_profile: ops
+  - username: alice
+    groups:
+      - wheel
+    sudo_profile: ops
+    state: absent
+EOF
+  export FAKE_TG_LOG="$log"
+  run ./scripts/orchestrate.sh plan \
+    --live-dir ./examples/live \
+    --env dev \
+    --subenv east \
+    --region us-east-1 \
+    --users-vars "$users"
+  [[ "$status" -ne 0 ]]
+  [[ "$output" == *"duplicate username"* ]]
+  [[ ! -s "$log" ]]
+  rm -f "$log" "$users"
+}
+
 @test "orchestrate rejects a users file that fails the Ansible user schema" {
   export SKIP_ACCOUNT_CHECK=true
   export SKIP_PREFLIGHT=true

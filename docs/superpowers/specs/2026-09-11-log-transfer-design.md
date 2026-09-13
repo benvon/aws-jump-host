@@ -104,7 +104,7 @@ Behavior:
 
 1. Require at least one path; each path must exist and be readable.
 2. Read bucket and region from `/etc/jump-host-log-transfer-*` (overridable with `JUMP_HOST_LOG_TRANSFER_BUCKET` / `JUMP_HOST_LOG_TRANSFER_REGION` for tests).
-3. Create a zip under `$HOME/.cache/log-transfer` (persistent home volume, not root disk). Include the given files/directories; fail if the zip is empty.
+3. Create a zip under a uniquely created directory in `$HOME/.cache/log-transfer` (persistent home volume, not root disk; `mktemp -d` so a reused PID cannot reopen a leftover archive). Include the given files/directories; fail if the zip is empty.
 4. Object key: `<linux-user>/<UTC timestamp YYYYMMDDTHHMMSSZ>-<hostname>-<4-char suffix>.zip`.
 5. Upload with `aws s3 cp` using:
    - **Instance role credentials** — unset `AWS_PROFILE` / `AWS_DEFAULT_PROFILE` for that invocation so `jump_host_login_env` SSO profiles are not used

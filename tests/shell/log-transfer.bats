@@ -11,8 +11,9 @@ setup() {
   SRC_DIR="$(mktemp -d)"
   AWS_LOG="$(mktemp)"
   ZIP_LOG="$(mktemp)"
+  ZIP_MEMBERS_LOG="$(mktemp)"
   export HOME="$HOME_DIR"
-  export AWS_LOG ZIP_LOG
+  export AWS_LOG ZIP_LOG ZIP_MEMBERS_LOG
   export JUMP_HOST_LOG_TRANSFER_BUCKET="jh-log-test"
   export JUMP_HOST_LOG_TRANSFER_REGION="us-west-2"
   export PATH="${FAKE_BIN}:${PATH}"
@@ -72,11 +73,18 @@ while [[ $# -gt 0 ]]; do
   fi
   shift
 done
+# Info-ZIP 3.0 default is add/replace: keep members already in the archive.
 mkdir -p "$(dirname "$archive")"
-: >"$archive"
+touch "$archive"
 for p in "${paths[@]+"${paths[@]}"}"; do
   printf '%s\n' "$p" >>"$archive"
 done
+{
+  echo "ARCHIVE=$archive"
+  echo "MEMBERS_BEGIN"
+  cat "$archive"
+  echo "MEMBERS_END"
+} >>"${ZIP_MEMBERS_LOG}"
 [[ -s "$archive" ]] || exit 1
 if [[ "$move_mode" -eq 1 ]]; then
   for p in "${paths[@]+"${paths[@]}"}"; do
@@ -100,7 +108,7 @@ EOF
 }
 
 teardown() {
-  rm -rf "${FAKE_BIN:-}" "${HOME_DIR:-}" "${SRC_DIR:-}" "${AWS_LOG:-}" "${ZIP_LOG:-}"
+  rm -rf "${FAKE_BIN:-}" "${HOME_DIR:-}" "${SRC_DIR:-}" "${AWS_LOG:-}" "${ZIP_LOG:-}" "${ZIP_MEMBERS_LOG:-}"
 }
 
 @test "log-transfer fails with no paths" {
@@ -187,6 +195,20 @@ EOF
   [[ -n "$key1" && -n "$key2" && "$key1" != "$key2" ]]
   [[ "$key1" =~ -[0-9a-f]{4}\.zip$ ]]
   [[ "$key2" =~ -[0-9a-f]{4}\.zip$ ]]
+}
+
+@test "log-transfer does not keep leftover zip members from a PID workspace" {
+  leftover="$HOME_DIR/.cache/log-transfer/$$"
+  mkdir -p "$leftover"
+  printf 'stale-secret.log\n' >"$leftover/archive.zip"
+  run "$LOG_TRANSFER" "$SRC_DIR/app.log"
+  [[ "$status" -eq 0 ]]
+  ! grep -q 'stale-secret.log' "$ZIP_MEMBERS_LOG"
+  grep -q 'app.log' "$ZIP_MEMBERS_LOG"
+  archive_line="$(grep '^ARCHIVE=' "$ZIP_MEMBERS_LOG")"
+  [[ "$archive_line" == *".cache/log-transfer/"* ]]
+  [[ "$archive_line" == *"/run."* ]]
+  ! [[ "$archive_line" =~ /log-transfer/[0-9]+/archive.zip ]]
 }
 
 @test "log-transfer terminates zip options before caller paths" {

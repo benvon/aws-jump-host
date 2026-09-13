@@ -44,6 +44,7 @@ def validate(data: object) -> None:
     if not isinstance(users, list):
         fail("users must be a list.")
 
+    seen_usernames: set[str] = set()
     for index, user in enumerate(users):
         if not isinstance(user, dict):
             fail("invalid user schema for users[%d]: must be a mapping." % index)
@@ -51,6 +52,9 @@ def validate(data: object) -> None:
         label = username if isinstance(username, str) and username else "users[%d]" % index
         if not isinstance(username, str) or not username:
             fail("invalid user schema for %s: username must be a string." % label)
+        if username in seen_usernames:
+            fail("invalid user schema for %s: duplicate username." % label)
+        seen_usernames.add(username)
         if "groups" not in user or not is_list_of_strings(user["groups"]):
             fail("invalid user schema for %s: groups must be a list." % label)
         if user.get("sudo_profile") not in ALLOWED_SUDO:
