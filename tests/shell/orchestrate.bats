@@ -120,6 +120,29 @@ assert l != -1 and j != -1 and l < j, text
   rm -f "$log"
 }
 
+@test "orchestrate without --users-vars clears inherited JUMP_HOST_USERS_VARS" {
+  export SKIP_ACCOUNT_CHECK=true
+  export SKIP_PREFLIGHT=true
+  export FAKE_TG_SCENARIO=hosts_empty
+  export JUMP_HOST_USERS_VARS="/this/should/not/be/used.yml"
+  local log ansible_log
+  log="$(mktemp)"
+  ansible_log="$(mktemp)"
+  export FAKE_TG_LOG="$log"
+  export FAKE_ANSIBLE_LOG="$ansible_log"
+  run ./scripts/orchestrate.sh plan \
+    --live-dir ./examples/live \
+    --env dev \
+    --subenv east \
+    --region us-east-1
+  [[ "$status" -eq 0 ]]
+  ! grep -q '/this/should/not/be/used.yml' "$log"
+  ! grep -q '/this/should/not/be/used.yml' "$ansible_log"
+  grep -q 'JUMP_HOST_ORCHESTRATE=1' "$log"
+  grep -q '^JUMP_HOST_USERS_VARS=$' "$log"
+  rm -f "$log" "$ansible_log"
+}
+
 @test "orchestrate exports JUMP_HOST_USERS_VARS from --users-vars" {
   export SKIP_ACCOUNT_CHECK=true
   export SKIP_PREFLIGHT=true

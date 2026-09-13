@@ -175,6 +175,11 @@ for dir in "${required_dirs[@]}"; do
   fi
 done
 
+# Always mark orchestration so log-transfer Terragrunt does not independently
+# fall back to ancestor ansible/users.yaml or a leftover JUMP_HOST_USERS_VARS.
+# Ansible only loads a users file when --users-vars is set; keep download grants
+# on that same source (empty means users: []).
+export JUMP_HOST_ORCHESTRATE=1
 if [[ -n "$users_vars" ]]; then
   if [[ "$users_vars" != /* ]]; then
     users_vars="$(cd "$(dirname -- "$users_vars")" && pwd)/$(basename -- "$users_vars")"
@@ -184,6 +189,8 @@ if [[ -n "$users_vars" ]]; then
     exit 1
   fi
   export JUMP_HOST_USERS_VARS="$users_vars"
+else
+  export JUMP_HOST_USERS_VARS=""
 fi
 
 require_cmd terragrunt

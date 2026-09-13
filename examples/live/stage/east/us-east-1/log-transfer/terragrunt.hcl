@@ -4,7 +4,14 @@ include "root" {
 }
 
 locals {
-  users_file = get_env("JUMP_HOST_USERS_VARS", try(find_in_parent_folders("ansible/users.yaml"), ""))
+  # orchestrate.sh always exports JUMP_HOST_ORCHESTRATE=1 and JUMP_HOST_USERS_VARS
+  # (path or empty) so downloader ARNs match Ansible. Direct Terragrunt keeps the
+  # ancestor ansible/users.yaml fallback when the env var is unset.
+  users_file = (
+    get_env("JUMP_HOST_ORCHESTRATE", "") == "1"
+    ? get_env("JUMP_HOST_USERS_VARS", "")
+    : get_env("JUMP_HOST_USERS_VARS", try(find_in_parent_folders("ansible/users.yaml"), ""))
+  )
   users_data = local.users_file != "" ? yamldecode(file(local.users_file)) : {}
   users      = try(local.users_data.users, [])
   downloader_role_arns = distinct(flatten([
@@ -16,7 +23,7 @@ locals {
 dependency "jump_hosts" {
   config_path = "../jump-hosts"
 
-  mock_outputs_allowed_terraform_commands = ["validate", "plan"]
+  mock_outputs_allowed_terraform_commands = ["validate", "plan", "init"]
   mock_outputs = {
     instance_role_arn  = "arn:aws:iam::111111111111:role/mock-jump-instance"
     instance_role_name = "mock-jump-instance"

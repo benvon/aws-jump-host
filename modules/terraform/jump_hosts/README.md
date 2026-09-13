@@ -12,16 +12,16 @@ Provisions private EC2 jump hosts with IMDSv2-only metadata configuration, least
 - `name_prefix` (string): default `jump-host`.
 - `common_tags` (map(string)): tags applied to all resources.
 - `volume_kms_key_id` (string|null): optional KMS key for EBS encryption.
-- `restrict_egress` (bool): default `false`. The module always allows outbound TCP/443 to the host's VPC primary CIDR so that SSM, EC2Messages, and SSMMessages VPC interface endpoints remain reachable. When `false`, an additional unrestricted TCP/443 rule (to `0.0.0.0/0`) is also applied. When `true`, only the rules in `egress_rules` are applied beyond the SSM baseline.
-- `egress_rules` (list of objects): additional explicit egress rules applied when `restrict_egress` is `true`. Each object requires `from_port`, `to_port`, `protocol`, and `cidr_blocks`; `description` is optional. The SSM baseline (TCP/443 to VPC CIDR) is always active and does not need to be included here.
+- `restrict_egress` (bool): default `false`. The module always allows outbound TCP/443 to the host's VPC primary CIDR (SSM interface endpoints) and to the regional S3 managed prefix list (S3 gateway endpoint used by Ansible SSM transfers and `log-transfer`). When `false`, an additional unrestricted TCP/443 rule (to `0.0.0.0/0`) is also applied. When `true`, only the rules in `egress_rules` are applied beyond those baselines.
+- `egress_rules` (list of objects): additional explicit egress rules applied when `restrict_egress` is `true`. Each object requires `from_port`, `to_port`, `protocol`, and `cidr_blocks`; `description` is optional. The SSM and S3 baselines are always active and do not need to be included here.
 
 ### Egress behaviour
 
 | `restrict_egress` | `egress_rules` | Result |
 |---|---|---|
-| `false` (default) | — | SSM VPC CIDR baseline + TCP/443 → `0.0.0.0/0` |
-| `true` | `[]` | SSM VPC CIDR baseline only (all other outbound denied) |
-| `true` | `[...]` | SSM VPC CIDR baseline + caller-supplied rules |
+| `false` (default) | — | SSM VPC CIDR + S3 prefix-list baselines + TCP/443 → `0.0.0.0/0` |
+| `true` | `[]` | SSM VPC CIDR + S3 prefix-list baselines only (all other outbound denied) |
+| `true` | `[...]` | SSM VPC CIDR + S3 prefix-list baselines + caller-supplied rules |
 
 ### Example – restrict egress to VPC only (SSM + custom rules)
 
@@ -43,9 +43,9 @@ module "jump_hosts" {
 }
 ```
 
-> **Note:** The SSM baseline rule (TCP/443 to the host's VPC primary CIDR) is always applied
-> automatically, even when `restrict_egress = true` and `egress_rules = []`, to ensure SSM
-> Session Manager connectivity is never broken by the egress setting.
+> **Note:** The SSM VPC CIDR and S3 prefix-list HTTPS baseline rules are always applied
+> automatically, even when `restrict_egress = true` and `egress_rules = []`, so Session Manager
+> and private S3 (Ansible transfers, `log-transfer` uploads) keep working.
 
 Home EBS volumes are separate resources from instances, so replacing an instance reattaches the same volume when state is unchanged. Terraform does **not** allow `lifecycle.prevent_destroy` to be driven by a variable (it must be a literal), so this module does not expose a toggle for that. To hard-block destroys, add your own wrapper resource or organization guardrails (for example AWS Backup, SCPs, or a forked copy of this module with `lifecycle { prevent_destroy = true }` as a fixed literal on `aws_ebs_volume.home`).
 
