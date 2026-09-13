@@ -53,7 +53,7 @@ Creates:
 - Lifecycle: expire objects after `retention_days` (default 730); abort incomplete multipart after 7 days
 - Bucket policy:
   - Deny `s3:*` when `aws:SecureTransport` is false
-  - Allow instance role: `s3:PutObject` (covers create/upload-part/complete multipart), `s3:AbortMultipartUpload`, `s3:ListMultipartUploadParts`, `s3:ListBucketMultipartUploads`, `s3:GetBucketLocation`. Do **not** grant `s3:GetObject` or `s3:ListBucket` to the shared instance role (every local user can use those credentials).
+  - Allow instance role: `s3:PutObject` (covers create/upload-part/complete multipart), `s3:GetObject`, `s3:AbortMultipartUpload`, `s3:ListMultipartUploadParts`, `s3:ListBucketMultipartUploads`, `s3:ListBucket`, `s3:GetBucketLocation`. `GetObject`/`ListBucket` on the shared instance role are intentional so operators can pull archives back onto the jump host; console download after SSO still uses `downloader_role_arns`.
   - Allow each downloader role ARN: `s3:GetObject`, `s3:ListBucket`, `s3:GetBucketLocation` (console object page)
 - Inline IAM policy on the existing jump-host instance role with the same upload/multipart actions, resource-scoped to this bucket
 
@@ -104,7 +104,7 @@ Behavior:
 1. Require at least one path; each path must exist and be readable.
 2. Read bucket and region from `/etc/jump-host-log-transfer-*` (overridable with `JUMP_HOST_LOG_TRANSFER_BUCKET` / `JUMP_HOST_LOG_TRANSFER_REGION` for tests).
 3. Create a zip under `$HOME/.cache/log-transfer` (persistent home volume, not root disk). Include the given files/directories; fail if the zip is empty.
-4. Object key: `<linux-user>/<UTC timestamp YYYYMMDDTHHMMSSZ>-<hostname>-<pid>.zip`.
+4. Object key: `<linux-user>/<UTC timestamp YYYYMMDDTHHMMSSZ>-<hostname>-<4-char suffix>.zip`.
 5. Upload with `aws s3 cp` using:
    - **Instance role credentials** — unset `AWS_PROFILE` / `AWS_DEFAULT_PROFILE` for that invocation so `jump_host_login_env` SSO profiles are not used
    - A process-local `AWS_CONFIG_FILE` that sets `s3.multipart_threshold = 16MB` and `s3.multipart_chunksize = 64MB` (and a modest `max_concurrent_requests`) so large archives use multipart, not a single `PutObject`

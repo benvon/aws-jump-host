@@ -185,6 +185,8 @@ EOF
   [[ "$status" -eq 0 ]]
   key2="$(grep -o 's3://jh-log-test/[^[:space:]]*' "$AWS_LOG" | tail -n1)"
   [[ -n "$key1" && -n "$key2" && "$key1" != "$key2" ]]
+  [[ "$key1" =~ -[0-9a-f]{4}\.zip$ ]]
+  [[ "$key2" =~ -[0-9a-f]{4}\.zip$ ]]
 }
 
 @test "log-transfer terminates zip options before caller paths" {

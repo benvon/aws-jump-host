@@ -39,7 +39,9 @@ fi
 user_name="$(id -un)"
 host_name="$(hostname -s 2>/dev/null || hostname)"
 ts="$(date -u +%Y%m%dT%H%M%SZ)"
-key="${user_name}/${ts}-${host_name}-$$.zip"
+suffix="$(od -An -N2 -tx1 /dev/urandom | tr -d ' \n' | tr 'A-F' 'a-f')"
+[[ ${#suffix} -eq 4 ]] || die "Could not generate a 4-character object-key suffix."
+key="${user_name}/${ts}-${host_name}-${suffix}.zip"
 
 work_dir="${HOME}/.cache/log-transfer/$$"
 mkdir -p "$work_dir"

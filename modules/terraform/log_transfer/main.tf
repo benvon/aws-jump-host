@@ -15,13 +15,18 @@ data "aws_caller_identity" "current" {}
 locals {
   downloader_role_arns = distinct(compact(var.downloader_role_arns))
 
+  # GetObject and ListBucket are intentional: operators may pull archives back
+  # onto the shared jump host with instance-role credentials. Console download
+  # still uses downloader_role_arns after SSO. Every local user shares this role.
   instance_upload_object_actions = [
     "s3:PutObject",
+    "s3:GetObject",
     "s3:AbortMultipartUpload",
     "s3:ListMultipartUploadParts",
   ]
 
   instance_upload_bucket_actions = [
+    "s3:ListBucket",
     "s3:GetBucketLocation",
     "s3:ListBucketMultipartUploads",
   ]

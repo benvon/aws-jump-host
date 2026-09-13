@@ -20,7 +20,7 @@ Creates a private S3 bucket for jump-host log archives with multipart-friendly u
 
 ## Notes
 
-- Upload permissions are granted both in the bucket policy (instance role ARN) and via an inline policy on the jump-host instance role. The instance role is upload-only (`PutObject` and multipart); it cannot `GetObject` or `ListBucket`, so local shell users cannot download other operators' archives with instance credentials.
+- Upload permissions are granted both in the bucket policy (instance role ARN) and via an inline policy on the jump-host instance role. The instance role can upload (`PutObject` and multipart) and also `GetObject` / `ListBucket` so operators can pull an archive back onto the jump host with instance-role credentials. Console download after SSO still uses `downloader_role_arns`. All local users share the instance role, so host-side list/get is not scoped per Linux user.
 - Downloader access is granted only through the bucket policy. IAM Identity Center (`AWSReservedSSO_*`) roles are not mutated; list their ARNs in `downloader_role_arns` instead.
 - Empty `downloader_role_arns` omits the downloader statement from the bucket policy so Terraform does not emit an invalid principal.
 - Uploads use the `INTELLIGENT_TIERING` storage class; optional `ARCHIVE_ACCESS` tiering is clamped to at most 730 days (S3 API maximum).

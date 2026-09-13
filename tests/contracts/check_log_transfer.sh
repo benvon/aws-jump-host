@@ -27,11 +27,16 @@ grep -q 'prefix_list_ids' "$jh" \
   || fail "jump_hosts default SG egress must allow the S3 prefix list for gateway-endpoint uploads"
 
 lt="$root/modules/terraform/log_transfer/main.tf"
-if grep -A8 'instance_upload_object_actions' "$lt" | grep -q 's3:GetObject'; then
-  fail "instance role must not grant s3:GetObject (downloaders use iam_role_arns)"
-fi
-if grep -A8 'instance_upload_bucket_actions' "$lt" | grep -q '"s3:ListBucket"'; then
-  fail "instance role must not grant s3:ListBucket (downloaders use iam_role_arns)"
-fi
+grep -A8 'instance_upload_object_actions' "$lt" | grep -q 's3:GetObject' \
+  || fail "instance role must grant s3:GetObject so operators can pull archives onto the jump host"
+grep -A8 'instance_upload_bucket_actions' "$lt" | grep -q '"s3:ListBucket"' \
+  || fail "instance role must grant s3:ListBucket so operators can list archives on the jump host"
+
+docs="$root/docs/consumer-guide.md"
+mod_readme="$root/modules/terraform/log_transfer/README.md"
+grep -q 'pull an archive back onto the jump host' "$docs" \
+  || fail "consumer-guide must document instance-role list/get for host-side download"
+grep -q 'pull an archive back onto the jump host' "$mod_readme" \
+  || fail "log_transfer README must document instance-role list/get for host-side download"
 
 echo "log-transfer contract OK"
