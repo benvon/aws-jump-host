@@ -18,6 +18,8 @@ done < <(find "$root/examples/live" -path '*/log-transfer/terragrunt.hcl' -print
 while IFS= read -r -d '' f; do
   grep -q 'JUMP_HOST_ORCHESTRATE' "$f" \
     || fail "log-transfer users_file must honor JUMP_HOST_ORCHESTRATE in $f"
+  grep -q 'validate_users_vars.py' "$f" \
+    || fail "log-transfer must fail-closed via validate_users_vars.py in $f"
 done < <(find "$root/examples/live" -path '*/log-transfer/terragrunt.hcl' -print0)
 
 jh="$root/modules/terraform/jump_hosts/main.tf"
@@ -25,6 +27,10 @@ grep -q 'aws_ec2_managed_prefix_list' "$jh" \
   || fail "jump_hosts default SG must look up the regional S3 managed prefix list"
 grep -q 'prefix_list_ids' "$jh" \
   || fail "jump_hosts default SG egress must allow the S3 prefix list for gateway-endpoint uploads"
+grep -A8 'data "aws_ec2_managed_prefix_list" "s3"' "$jh" | grep -q 'default_sg_hosts' \
+  || fail "S3 prefix-list lookup must be gated on module-created default security groups"
+grep -A8 'data "aws_ssm_parameter" "al2023_ami_x86_64"' "$jh" | grep -q 'hosts_using_default_ami' \
+  || fail "default AMI lookup must be gated on hosts that do not supply ami_id or ami_ssm_parameter_name"
 
 lt="$root/modules/terraform/log_transfer/main.tf"
 grep -A8 'instance_upload_object_actions' "$lt" | grep -q 's3:GetObject' \

@@ -4,9 +4,10 @@
     that:
       - item.username is string
       - item.groups is defined
-      - item.groups is iterable
+      - item.groups | type_debug == "list"
       - item.sudo_profile in ['none', 'ops', 'admin']
       - item.state is not defined or item.state in ['present', 'absent']
+      - item.iam_role_arns is not defined or item.iam_role_arns | type_debug == "list"
     fail_msg: "Invalid user schema for {{ item | to_nice_json }}"
   loop: "{{ user_accounts_users }}"
   loop_control:

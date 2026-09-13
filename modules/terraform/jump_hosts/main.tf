@@ -9,19 +9,9 @@ terraform {
   }
 }
 
-data "aws_ssm_parameter" "al2023_ami_x86_64" {
-  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
-}
-
 data "aws_partition" "current" {}
 
 data "aws_region" "current" {}
-
-# S3 gateway endpoints are reached via the regional managed prefix list, not the VPC CIDR.
-# Ansible SSM transfers and log-transfer uploads both need this path when restrict_egress is true.
-data "aws_ec2_managed_prefix_list" "s3" {
-  name = "com.amazonaws.${data.aws_region.current.name}.s3"
-}
 
 data "aws_subnet" "host" {
   for_each = var.hosts
@@ -44,12 +34,30 @@ locals {
     for host_name, host in local.normalized_hosts : host_name => host
     if length(host.security_group_ids) == 0
   }
+
+  hosts_using_default_ami = [
+    for host_name, host in local.normalized_hosts : host_name
+    if try(host.ami_id, null) == null && host.ami_ssm_parameter_name == null
+  ]
+}
+
+# Only look up the regional default AMI when at least one host will actually use it.
+data "aws_ssm_parameter" "al2023_ami_x86_64" {
+  count = length(local.hosts_using_default_ami) > 0 ? 1 : 0
+  name  = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+}
+
+# S3 gateway endpoints are reached via the regional managed prefix list, not the VPC CIDR.
+# Only hosts that get a module-created SG need this lookup (custom SGs are caller-owned).
+data "aws_ec2_managed_prefix_list" "s3" {
+  count = length(local.default_sg_hosts) > 0 ? 1 : 0
+  name  = "com.amazonaws.${data.aws_region.current.name}.s3"
 }
 
 data "aws_ssm_parameter" "host_ami" {
   for_each = {
     for host_name, host in local.normalized_hosts : host_name => host.ami_ssm_parameter_name
-    if try(host.ami_id, null) == null && try(host.ami_ssm_parameter_name, null) != null
+    if try(host.ami_id, null) == null && host.ami_ssm_parameter_name != null
   }
 
   name = each.value
@@ -110,7 +118,7 @@ locals {
           to_port         = 443
           protocol        = "tcp"
           cidr_blocks     = []
-          prefix_list_ids = [data.aws_ec2_managed_prefix_list.s3.id]
+          prefix_list_ids = [data.aws_ec2_managed_prefix_list.s3[0].id]
         }
       ],
       local.default_sg_extra_egress
@@ -225,7 +233,7 @@ resource "aws_security_group" "default" {
 resource "aws_instance" "host" {
   for_each = local.normalized_hosts
 
-  ami                         = coalesce(try(each.value.ami_id, null), try(data.aws_ssm_parameter.host_ami[each.key].value, null), data.aws_ssm_parameter.al2023_ami_x86_64.value)
+  ami                         = coalesce(try(each.value.ami_id, null), try(data.aws_ssm_parameter.host_ami[each.key].value, null), try(data.aws_ssm_parameter.al2023_ami_x86_64[0].value, null))
   instance_type               = each.value.instance_type
   subnet_id                   = each.value.subnet_id
   vpc_security_group_ids      = length(each.value.security_group_ids) > 0 ? each.value.security_group_ids : [aws_security_group.default[each.key].id]

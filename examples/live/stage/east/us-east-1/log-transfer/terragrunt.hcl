@@ -12,8 +12,12 @@ locals {
     ? get_env("JUMP_HOST_USERS_VARS", "")
     : get_env("JUMP_HOST_USERS_VARS", try(find_in_parent_folders("ansible/users.yaml"), ""))
   )
-  users_data = local.users_file != "" ? yamldecode(file(local.users_file)) : {}
-  users      = try(local.users_data.users, [])
+  # Same fail-closed schema as orchestrate.sh / Ansible user_accounts. Applied here
+  # so `terragrunt apply` without the wrapper cannot grant download ARNs for records
+  # Ansible would reject.
+  users_schema = local.users_file == "" ? "" : run_cmd("--terragrunt-quiet", "${get_repo_root()}/scripts/validate_users_vars.py", local.users_file)
+  users_data   = local.users_file != "" ? yamldecode(file(local.users_file)) : {}
+  users        = try(local.users_data.users, [])
   downloader_role_arns = distinct(flatten([
     for user in local.users :
     try(user.state, "present") == "absent" ? [] : try(user.iam_role_arns, [])
