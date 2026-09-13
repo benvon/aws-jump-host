@@ -21,7 +21,7 @@
 - Upload uses instance role: unset `AWS_PROFILE` and `AWS_DEFAULT_PROFILE` for `aws s3 cp`. Process-local `AWS_CONFIG_FILE` with `multipart_threshold = 16MB` and `multipart_chunksize = 64MB`.
 - Do not install AWS CLI in Ansible. `zip` is already in `session_comfort_base_packages`.
 - Extra-vars names: `jump_host_log_transfer_bucket`, `jump_host_log_transfer_region` (optional `*_extra` overlay). Config files: `/etc/jump-host-log-transfer-bucket`, `/etc/jump-host-log-transfer-region`. Test overrides: `JUMP_HOST_LOG_TRANSFER_BUCKET`, `JUMP_HOST_LOG_TRANSFER_REGION`.
-- Object key: `<linux-user>/<YYYYMMDDTHHMMSSZ>-<hostname>.zip`. Console URL: `https://s3.console.aws.amazon.com/s3/object/<bucket>?region=<region>&prefix=<key>`
+- Object key: `<linux-user>/<YYYYMMDDTHHMMSSZ>-<hostname>-<pid>.zip`. Console URL: `https://s3.console.aws.amazon.com/s3/object/<bucket>?region=<region>&prefix=<key>`
 - Apply order: observability → vpc-endpoints → jump-hosts → log-transfer. Destroy: log-transfer → jump-hosts → vpc-endpoints → observability.
 - Helper must work under `set -euo pipefail` on Bash 3.2 (`/bin/bash`) and Bash 4+.
 
@@ -248,7 +248,7 @@ fi
 user_name="$(id -un)"
 host_name="$(hostname -s 2>/dev/null || hostname)"
 ts="$(date -u +%Y%m%dT%H%M%SZ)"
-key="${user_name}/${ts}-${host_name}.zip"
+key="${user_name}/${ts}-${host_name}-$$.zip"
 
 work_dir="${HOME}/.cache/log-transfer/$$"
 mkdir -p "$work_dir"

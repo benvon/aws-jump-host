@@ -171,6 +171,22 @@ EOF
   [[ "$output" != *"s3.console.aws.amazon.com"* ]]
 }
 
+@test "log-transfer object keys are unique when started in the same second" {
+  cat >"$FAKE_BIN/date" <<'EOF'
+#!/usr/bin/env bash
+echo '20260115T120000Z'
+EOF
+  chmod +x "$FAKE_BIN/date"
+  run "$LOG_TRANSFER" "$SRC_DIR/app.log"
+  [[ "$status" -eq 0 ]]
+  key1="$(grep -o 's3://jh-log-test/[^[:space:]]*' "$AWS_LOG" | tail -n1)"
+  : >"$AWS_LOG"
+  run "$LOG_TRANSFER" "$SRC_DIR/app.log"
+  [[ "$status" -eq 0 ]]
+  key2="$(grep -o 's3://jh-log-test/[^[:space:]]*' "$AWS_LOG" | tail -n1)"
+  [[ -n "$key1" && -n "$key2" && "$key1" != "$key2" ]]
+}
+
 @test "log-transfer terminates zip options before caller paths" {
   cd "$SRC_DIR"
   printf 'dash\n' >-m
