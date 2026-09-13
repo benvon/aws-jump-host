@@ -11,6 +11,9 @@ if [[ -n "${FAKE_TG_LOG:-}" ]]; then
   if [[ "${JUMP_HOST_USERS_VARS+x}" ]]; then
     printf 'JUMP_HOST_USERS_VARS=%s\n' "$JUMP_HOST_USERS_VARS" >>"$FAKE_TG_LOG"
   fi
+  if [[ "${JUMP_HOST_USERS_VALIDATOR+x}" ]]; then
+    printf 'JUMP_HOST_USERS_VALIDATOR=%s\n' "$JUMP_HOST_USERS_VALIDATOR" >>"$FAKE_TG_LOG"
+  fi
 fi
 
 args=()

@@ -188,7 +188,9 @@ done
 # fall back to ancestor ansible/users.yaml or a leftover JUMP_HOST_USERS_VARS.
 # Ansible only loads a users file when --users-vars is set; keep download grants
 # on that same source (empty means users: []).
+# Point Terragrunt at this checkout's validator; --live-dir may be another repo.
 export JUMP_HOST_ORCHESTRATE=1
+export JUMP_HOST_USERS_VALIDATOR="${REPO_ROOT}/scripts/validate_users_vars.py"
 if [[ -n "$users_vars" ]]; then
   if [[ "$users_vars" != /* ]]; then
     users_vars="$(cd "$(dirname -- "$users_vars")" && pwd)/$(basename -- "$users_vars")"

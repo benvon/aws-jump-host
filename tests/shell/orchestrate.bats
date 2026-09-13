@@ -140,6 +140,7 @@ assert l != -1 and j != -1 and l < j, text
   ! grep -q '/this/should/not/be/used.yml' "$ansible_log"
   grep -q 'JUMP_HOST_ORCHESTRATE=1' "$log"
   grep -q '^JUMP_HOST_USERS_VARS=$' "$log"
+  grep -q "JUMP_HOST_USERS_VALIDATOR=${REPO_ROOT}/scripts/validate_users_vars.py" "$log"
   rm -f "$log" "$ansible_log"
 }
 
@@ -231,7 +232,7 @@ EOF
   rm -f "$log" "$users"
 }
 
-@test "orchestrate exports JUMP_HOST_USERS_VARS from --users-vars" {
+@test "orchestrate exports JUMP_HOST_USERS_VARS and JUMP_HOST_USERS_VALIDATOR" {
   export SKIP_ACCOUNT_CHECK=true
   export SKIP_PREFLIGHT=true
   export FAKE_TG_SCENARIO=hosts_empty
@@ -250,6 +251,7 @@ EOF
     --users-vars "$users"
   [[ "$status" -eq 0 ]]
   grep -q "JUMP_HOST_USERS_VARS=${users}" "$log"
+  grep -q "JUMP_HOST_USERS_VALIDATOR=${REPO_ROOT}/scripts/validate_users_vars.py" "$log"
   rm -f "$log" "$ansible_log" "$users"
 }
 

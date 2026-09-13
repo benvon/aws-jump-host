@@ -14,10 +14,13 @@ done < <(find "$root/examples/live" -path '*/log-transfer/terragrunt.hcl' -print
 
 # Orchestrate without --users-vars uses users: [] in Ansible. The stack must not
 # independently fall back to JUMP_HOST_USERS_VARS or ancestor ansible/users.yaml
-# when JUMP_HOST_ORCHESTRATE is set.
+# when JUMP_HOST_ORCHESTRATE is set. Validator path is JUMP_HOST_USERS_VALIDATOR,
+# else get_repo_root()/scripts/validate_users_vars.py.
 while IFS= read -r -d '' f; do
   grep -q 'JUMP_HOST_ORCHESTRATE' "$f" \
     || fail "log-transfer users_file must honor JUMP_HOST_ORCHESTRATE in $f"
+  grep -q 'get_env("JUMP_HOST_USERS_VALIDATOR"' "$f" \
+    || fail "log-transfer must resolve the validator from JUMP_HOST_USERS_VALIDATOR in $f"
   grep -q 'validate_users_vars.py' "$f" \
     || fail "log-transfer must fail-closed via validate_users_vars.py in $f"
 done < <(find "$root/examples/live" -path '*/log-transfer/terragrunt.hcl' -print0)

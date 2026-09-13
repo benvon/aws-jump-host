@@ -76,7 +76,7 @@ Add `instance_role_arn` and `instance_role_name` so `log-transfer` can depend on
 - `dependencies { paths = ["../jump-hosts"] }`
 - `instance_role_*` from `dependency.jump-hosts.outputs`
 - Flatten unique `users[].iam_role_arns` from the extra-vars file (same `find_in_parent_folders` pattern as private `ssm-self-management`; examples may pass a local path or empty list)
-- Fail closed through `scripts/validate_users_vars.py` (orchestrate and each log-transfer stack via `run_cmd`) using the same rules as Ansible `user_accounts`: required fields, list types, and present-vs-null optional keys. Do not flatten ARNs from records Ansible would reject.
+- Fail closed through `scripts/validate_users_vars.py` (orchestrate and each log-transfer stack via `run_cmd`) using the same rules as Ansible `user_accounts`: required fields, list types, and present-vs-null optional keys. Do not flatten ARNs from records Ansible would reject. Orchestrate exports `JUMP_HOST_USERS_VALIDATOR` so `run_cmd` still finds that script when `--live-dir` is a separate repository (`get_repo_root()` would not).
 - Default bucket name derived from account id, env, subenv, and region (63-char S3 limit; hyphens only). Overridable via input.
 
 ### `orchestrate.sh`
