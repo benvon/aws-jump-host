@@ -1,6 +1,6 @@
 # Core IaC/orchestration tools
 terraform 1.14.6
-terragrunt 0.99.4
+terragrunt 1.1.4
 
 # Runtime and cloud CLI
 python 3.11.11
