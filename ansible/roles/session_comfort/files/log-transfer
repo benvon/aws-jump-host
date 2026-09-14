@@ -7,6 +7,11 @@ die() {
   exit 1
 }
 
+require_safe() {
+  local name="$1" value="$2" pattern="$3"
+  [[ "$value" =~ $pattern ]] || die "Unsafe ${name}."
+}
+
 trim_file() {
   local f="$1"
   [[ -r "$f" ]] || return 0
@@ -33,6 +38,8 @@ if [[ -z "$region" ]]; then
 fi
 [[ -n "$bucket" ]] || die "No log-transfer bucket configured (set JUMP_HOST_LOG_TRANSFER_BUCKET or /etc/jump-host-log-transfer-bucket)."
 [[ -n "$region" ]] || die "No log-transfer region configured (set JUMP_HOST_LOG_TRANSFER_REGION or /etc/jump-host-log-transfer-region)."
+require_safe "log-transfer bucket" "$bucket" '^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$'
+require_safe "log-transfer region" "$region" '^[a-z0-9][a-z0-9-]*$'
 
 [[ -n "${HOME:-}" ]] || die "HOME is not set; cannot write zip cache."
 
@@ -41,7 +48,11 @@ host_name="$(hostname -s 2>/dev/null || hostname)"
 ts="$(date -u +%Y%m%dT%H%M%SZ)"
 suffix="$(od -An -N2 -tx1 /dev/urandom | tr -d ' \n' | tr 'A-F' 'a-f')"
 [[ ${#suffix} -eq 4 ]] || die "Could not generate a 4-character object-key suffix."
+require_safe "linux username" "$user_name" '^[a-z_][a-z0-9_-]{0,31}$'
+require_safe "hostname" "$host_name" '^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$'
+require_safe "timestamp" "$ts" '^[0-9]{8}T[0-9]{6}Z$'
 key="${user_name}/${ts}-${host_name}-${suffix}.zip"
+require_safe "object key" "$key" '^[A-Za-z0-9._][A-Za-z0-9._/-]*\.zip$'
 
 cache_root="${HOME}/.cache/log-transfer"
 mkdir -p "$cache_root"
@@ -51,7 +62,16 @@ aws_config="${work_dir}/aws-config"
 cleanup() { rm -rf "$work_dir"; }
 trap cleanup EXIT
 
-zip -r "$zip_path" -- "$@" >/dev/null
+zip_paths=()
+for p in "$@"; do
+  # Info-ZIP treats a lone "-" as stdin even after "--".
+  if [[ "$p" == - ]]; then
+    zip_paths+=("./-")
+  else
+    zip_paths+=("$p")
+  fi
+done
+zip -r "$zip_path" -- "${zip_paths[@]}" >/dev/null
 set +o pipefail
 first_entry="$(zipinfo -1 "$zip_path" | head -n 1 || true)"
 set -o pipefail

@@ -88,7 +88,7 @@ Required stack directory `log-transfer` next to `jump-hosts`.
 | init / plan / apply | observability → vpc-endpoints → jump-hosts → **log-transfer** |
 | destroy | **log-transfer** → jump-hosts → … |
 
-`configure` reads Terragrunt outputs `bucket_name` and `region` and passes Ansible extra-vars (e.g. `jump_host_log_transfer_bucket`, `jump_host_log_transfer_region`).
+`configure` reads Terragrunt outputs `bucket_name` and `region`, rejects values that are not a safe S3 bucket name or AWS region id, and passes Ansible extra-vars (e.g. `jump_host_log_transfer_bucket`, `jump_host_log_transfer_region`).
 
 ### Ansible `session_comfort`
 
@@ -104,7 +104,7 @@ Behavior:
 
 1. Require at least one path; each path must exist and be readable.
 2. Read bucket and region from `/etc/jump-host-log-transfer-*` (overridable with `JUMP_HOST_LOG_TRANSFER_BUCKET` / `JUMP_HOST_LOG_TRANSFER_REGION` for tests).
-3. Create a zip under a uniquely created directory in `$HOME/.cache/log-transfer` (persistent home volume, not root disk; `mktemp -d` so a reused PID cannot reopen a leftover archive). Include the given files/directories; fail if the zip is empty.
+3. Create a zip under a uniquely created directory in `$HOME/.cache/log-transfer` (persistent home volume, not root disk; `mktemp -d` so a reused PID cannot reopen a leftover archive). Include the given files/directories; rewrite a path that is exactly `-` to `./-` so Info-ZIP archives that filesystem name instead of stdin. Fail if the zip is empty.
 4. Object key: `<linux-user>/<UTC timestamp YYYYMMDDTHHMMSSZ>-<hostname>-<4-char suffix>.zip`.
 5. Upload with `aws s3 cp` using:
    - **Instance role credentials** — unset `AWS_PROFILE` / `AWS_DEFAULT_PROFILE` for that invocation so `jump_host_login_env` SSO profiles are not used
@@ -132,7 +132,7 @@ lifecycle → expire object at 730 days; abort stale multipart at 7 days
 
 The helper exits non-zero, prints a short stderr message, and **does not** print a console URL when:
 
-- no paths, missing/unreadable path, missing `zip` or `aws`, missing/empty bucket or region config, empty zip, or `aws s3 cp` failure
+- no paths, missing/unreadable path, missing `zip` or `aws`, missing/empty/unsafe bucket or region config, unsafe generated object key, empty zip, or `aws s3 cp` failure
 
 A `trap` removes the temp zip on success and on most failures. Interrupted/failed multipart uploads are not aborted by the script; lifecycle deletes them after 7 days.
 

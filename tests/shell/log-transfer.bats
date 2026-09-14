@@ -77,6 +77,11 @@ done
 mkdir -p "$(dirname "$archive")"
 touch "$archive"
 for p in "${paths[@]+"${paths[@]}"}"; do
+  # Info-ZIP: operand "-" is stdin even after "--".
+  if [[ "$p" == - ]]; then
+    printf 'STDIN\n' >>"$archive"
+    continue
+  fi
   printf '%s\n' "$p" >>"$archive"
 done
 {
@@ -209,6 +214,30 @@ EOF
   [[ "$archive_line" == *".cache/log-transfer/"* ]]
   [[ "$archive_line" == *"/run."* ]]
   ! [[ "$archive_line" =~ /log-transfer/[0-9]+/archive.zip ]]
+}
+
+@test "log-transfer archives a file named dash instead of reading stdin" {
+  cd "$SRC_DIR"
+  printf 'dashfile\n' >-
+  run "$LOG_TRANSFER" -
+  [[ "$status" -eq 0 ]]
+  grep -q -- ' ./-' "$ZIP_LOG"
+  grep -q './-' "$ZIP_MEMBERS_LOG"
+  ! grep -q 'STDIN' "$ZIP_MEMBERS_LOG"
+}
+
+@test "log-transfer rejects an unsafe bucket name" {
+  export JUMP_HOST_LOG_TRANSFER_BUCKET='jh-log-test;evil'
+  run "$LOG_TRANSFER" "$SRC_DIR/app.log"
+  [[ "$status" -ne 0 ]]
+  [[ "$output" != *"s3.console.aws.amazon.com"* ]]
+}
+
+@test "log-transfer rejects an unsafe region" {
+  export JUMP_HOST_LOG_TRANSFER_REGION='us-west-2;evil'
+  run "$LOG_TRANSFER" "$SRC_DIR/app.log"
+  [[ "$status" -ne 0 ]]
+  [[ "$output" != *"s3.console.aws.amazon.com"* ]]
 }
 
 @test "log-transfer terminates zip options before caller paths" {

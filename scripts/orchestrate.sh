@@ -313,6 +313,15 @@ resolve_log_transfer_outputs() {
     echo "Error: log-transfer outputs bucket_name/region are empty in ${log_transfer_dir}." >&2
     return 1
   fi
+  # Same charset the helper interpolates into aws CLI / console URLs.
+  if [[ ! "$bucket" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ]]; then
+    echo "Error: log-transfer output bucket_name is not a safe S3 bucket name." >&2
+    return 1
+  fi
+  if [[ ! "$region" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+    echo "Error: log-transfer output region is not a safe AWS region id." >&2
+    return 1
+  fi
   printf '%s\t%s\n' "$bucket" "$region"
 }
 

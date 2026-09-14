@@ -394,3 +394,21 @@ assert "apply" in text, text
   grep -q 'jump_host_log_transfer_bucket=example-log-transfer-bucket' "$ansible_log"
   rm -f "$log" "$ansible_log"
 }
+
+@test "orchestrate configure rejects an unsafe log-transfer bucket output" {
+  export SKIP_ACCOUNT_CHECK=true
+  export SKIP_PREFLIGHT=true
+  export FAKE_TG_SCENARIO=hosts_empty
+  export FAKE_TG_BUCKET='example-log-transfer-bucket;evil'
+  local ansible_log
+  ansible_log="$(mktemp)"
+  export FAKE_ANSIBLE_LOG="$ansible_log"
+  run ./scripts/orchestrate.sh configure \
+    --live-dir ./examples/live \
+    --env dev \
+    --subenv east \
+    --region us-east-1
+  [[ "$status" -ne 0 ]]
+  ! grep -q 'jump_host_log_transfer_bucket=' "$ansible_log"
+  rm -f "$ansible_log"
+}
