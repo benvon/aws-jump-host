@@ -43,6 +43,17 @@ def require_linux_name(value: object, label: str, field: str) -> None:
         )
 
 
+def require_optional_abs_path(user: dict, key: str, label: str) -> None:
+    if key not in user:
+        return
+    value = user[key]
+    if not isinstance(value, str) or not value.startswith("/"):
+        fail(
+            "invalid user schema for %s: %s must be an absolute path."
+            % (label, key)
+        )
+
+
 def validate(data: object) -> list[dict]:
     if data is None:
         data = {}
@@ -94,6 +105,8 @@ def validate(data: object) -> list[dict]:
                         "invalid user schema for %s: iam_role_arns must be IAM role ARNs."
                         % label
                     )
+        require_optional_abs_path(user, "home", label)
+        require_optional_abs_path(user, "shell", label)
         validated.append(user)
     return validated
 

@@ -150,6 +150,46 @@ EOF
   [[ "$output" != *'role/bob'* ]]
 }
 
+@test "validate_users_vars rejects a non-string home path" {
+  local f
+  f="$(mktemp)"
+  cat >"$f" <<'EOF'
+users:
+  - username: alice
+    groups:
+      - wheel
+    sudo_profile: ops
+    home:
+      path: /home/alice
+    iam_role_arns:
+      - arn:aws:iam::123456789012:role/alice
+EOF
+  run ./scripts/validate_users_vars.py "$f"
+  rm -f "$f"
+  [[ "$status" -ne 0 ]]
+  [[ "$output" == *"home must be an absolute path"* ]]
+}
+
+@test "validate_users_vars rejects a non-string shell path" {
+  local f
+  f="$(mktemp)"
+  cat >"$f" <<'EOF'
+users:
+  - username: alice
+    groups:
+      - wheel
+    sudo_profile: ops
+    shell:
+      path: /bin/bash
+    iam_role_arns:
+      - arn:aws:iam::123456789012:role/alice
+EOF
+  run ./scripts/validate_users_vars.py "$f"
+  rm -f "$f"
+  [[ "$status" -ne 0 ]]
+  [[ "$output" == *"shell must be an absolute path"* ]]
+}
+
 @test "validate_users_vars rejects an explicitly null users list" {
   local f
   f="$(mktemp)"

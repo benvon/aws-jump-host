@@ -8,7 +8,7 @@ Creates a private S3 bucket for jump-host log archives with multipart-friendly u
 - `instance_role_arn` (string): jump host instance role ARN allowed to upload archives (from `jump_hosts` outputs).
 - `instance_role_name` (string): jump host instance role name for the upload inline policy (from `jump_hosts` outputs).
 - `downloader_role_arns` (list(string), default `[]`): IAM role ARNs allowed to download via the AWS console (typically flattened `users[].iam_role_arns`). Empty means uploads only; console downloads return 403 until ARNs are set.
-- `retention_days` (number, default `730`): expire objects after this many days.
+- `retention_days` (number, default `730`): expire objects after this many days (maximum 730).
 - `force_destroy` (bool, default `false`): allow destroying a non-empty bucket.
 - `tags` (map(string), default `{}`)
 

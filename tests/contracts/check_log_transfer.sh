@@ -42,6 +42,8 @@ grep -A8 'instance_upload_object_actions' "$lt" | grep -q 's3:GetObject' \
   || fail "instance role must grant s3:GetObject so operators can pull archives onto the jump host"
 grep -A8 'instance_upload_bucket_actions' "$lt" | grep -q '"s3:ListBucket"' \
   || fail "instance role must grant s3:ListBucket so operators can list archives on the jump host"
+grep -A12 'variable "retention_days"' "$root/modules/terraform/log_transfer/variables.tf" | grep -q 'var.retention_days <= 730' \
+  || fail "log_transfer retention_days must be capped at 730 so ARCHIVE_ACCESS cannot outlive expiration"
 
 docs="$root/docs/consumer-guide.md"
 mod_readme="$root/modules/terraform/log_transfer/README.md"

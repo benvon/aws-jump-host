@@ -20,9 +20,14 @@ variable "downloader_role_arns" {
 }
 
 variable "retention_days" {
-  description = "Expire log-transfer objects after this many days."
+  description = "Expire log-transfer objects after this many days (1-730). Capped at 730 so Intelligent-Tiering ARCHIVE_ACCESS cannot outlive expiration."
   type        = number
   default     = 730
+
+  validation {
+    condition     = var.retention_days >= 1 && var.retention_days <= 730
+    error_message = "retention_days must be between 1 and 730 (S3 ARCHIVE_ACCESS maximum is 730 days)."
+  }
 }
 
 variable "force_destroy" {
