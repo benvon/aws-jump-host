@@ -23,6 +23,8 @@ while IFS= read -r -d '' f; do
     || fail "log-transfer must resolve the validator from JUMP_HOST_USERS_VALIDATOR in $f"
   grep -q 'validate_users_vars.py' "$f" \
     || fail "log-transfer must fail-closed via validate_users_vars.py in $f"
+  grep -q -- '--print-downloader-arns' "$f" \
+    || fail "log-transfer must take downloader ARNs from the users validator in $f"
 done < <(find "$root/examples/live" -path '*/log-transfer/terragrunt.hcl' -print0)
 
 jh="$root/modules/terraform/jump_hosts/main.tf"

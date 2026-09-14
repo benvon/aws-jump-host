@@ -12,17 +12,15 @@ locals {
     ? get_env("JUMP_HOST_USERS_VARS", "")
     : get_env("JUMP_HOST_USERS_VARS", try(find_in_parent_folders("ansible/users.yaml"), ""))
   )
-  # Fail closed with the Ansible user schema so a direct apply cannot grant
-  # download ARNs for records Ansible would reject. Prefer JUMP_HOST_USERS_VALIDATOR
-  # (orchestrate: shared checkout); otherwise this repository's copy.
+  # Fail closed via the shared users policy helper. --print-downloader-arns is
+  # the only source of bucket-policy ARNs (absent users omitted). Prefer
+  # JUMP_HOST_USERS_VALIDATOR (orchestrate: shared checkout).
   users_validator = get_env("JUMP_HOST_USERS_VALIDATOR", "${get_repo_root()}/scripts/validate_users_vars.py")
-  users_schema    = local.users_file == "" ? "" : run_cmd("--terragrunt-quiet", local.users_validator, local.users_file)
-  users_data      = local.users_file != "" ? yamldecode(file(local.users_file)) : {}
-  users           = try(local.users_data.users, [])
-  downloader_role_arns = distinct(flatten([
-    for user in local.users :
-    try(user.state, "present") == "absent" ? [] : try(user.iam_role_arns, [])
-  ]))
+  downloader_role_arns = (
+    local.users_file == ""
+    ? []
+    : jsondecode(run_cmd("--terragrunt-quiet", local.users_validator, "--print-downloader-arns", local.users_file))
+  )
 }
 
 dependency "jump_hosts" {

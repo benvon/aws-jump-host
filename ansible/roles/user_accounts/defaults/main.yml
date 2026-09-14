@@ -5,6 +5,8 @@ user_accounts_admin_use_unrestricted_sudo: true
 user_accounts_admin_sudo_commands: []
 
 user_accounts_users: []
+# Orchestrate exports JUMP_HOST_USERS_VALIDATOR; otherwise use this repository's helper.
+user_accounts_users_validator: "{{ lookup('ansible.builtin.env', 'JUMP_HOST_USERS_VALIDATOR') | default('', true) }}"
 user_accounts_managed_user_uid_min: 1000
 user_accounts_managed_user_exclusions:
   - ec2-user

@@ -106,6 +106,50 @@ EOF
   [[ "$output" == *"duplicate username"* ]]
 }
 
+@test "validate_users_vars rejects an invalid Linux username" {
+  local f
+  f="$(mktemp)"
+  cat >"$f" <<'EOF'
+users:
+  - username: alice bob
+    groups:
+      - wheel
+    sudo_profile: ops
+    iam_role_arns:
+      - arn:aws:iam::123456789012:role/alice
+EOF
+  run ./scripts/validate_users_vars.py "$f"
+  rm -f "$f"
+  [[ "$status" -ne 0 ]]
+  [[ "$output" == *"Linux"* ]]
+}
+
+@test "validate_users_vars prints downloader ARNs after applying policy" {
+  local f
+  f="$(mktemp)"
+  cat >"$f" <<'EOF'
+users:
+  - username: alice
+    groups:
+      - wheel
+    sudo_profile: ops
+    iam_role_arns:
+      - arn:aws:iam::123456789012:role/alice
+  - username: bob
+    groups:
+      - wheel
+    sudo_profile: ops
+    state: absent
+    iam_role_arns:
+      - arn:aws:iam::123456789012:role/bob
+EOF
+  run ./scripts/validate_users_vars.py --print-downloader-arns "$f"
+  rm -f "$f"
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == *'arn:aws:iam::123456789012:role/alice'* ]]
+  [[ "$output" != *'role/bob'* ]]
+}
+
 @test "validate_users_vars rejects an explicitly null users list" {
   local f
   f="$(mktemp)"

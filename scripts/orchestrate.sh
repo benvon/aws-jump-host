@@ -32,9 +32,8 @@ require_cmd() {
   fi
 }
 
-# Match ansible/roles/user_accounts so log-transfer bucket policy is not
-# applied for records Ansible will later reject. Direct Terragrunt uses the
-# same script via run_cmd in the log-transfer stacks.
+# Canonical users.yaml policy (schema, Linux names, downloader ARNs). Terragrunt
+# and Ansible call the same helper; this wrapper is the fast-fail before stacks.
 validate_users_vars_file() {
   local file="$1"
   require_cmd python3
