@@ -127,19 +127,19 @@ s3_block_file="${work_dir}/s3-block"
 s3_summary="multipart_threshold=16MB multipart_chunksize=64MB max_concurrent_requests=4"
 if [[ -s "$inherited_s3" ]]; then
   while IFS= read -r line || [[ -n "$line" ]]; do
-    key="${line%%=*}"
-    value="${line#*=}"
-    key="${key%"${key##*[![:space:]]}"}"
-    key="${key#"${key%%[![:space:]]*}"}"
-    value="${value%"${value##*[![:space:]]}"}"
-    value="${value#"${value%%[![:space:]]*}"}"
-    case "$key" in
+    s3_setting="${line%%=*}"
+    s3_setting_value="${line#*=}"
+    s3_setting="${s3_setting%"${s3_setting##*[![:space:]]}"}"
+    s3_setting="${s3_setting#"${s3_setting%%[![:space:]]*}"}"
+    s3_setting_value="${s3_setting_value%"${s3_setting_value##*[![:space:]]}"}"
+    s3_setting_value="${s3_setting_value#"${s3_setting_value%%[![:space:]]*}"}"
+    case "$s3_setting" in
       multipart_threshold|multipart_chunksize|max_concurrent_requests) continue ;;
     esac
-    [[ "$key" =~ ^[a-z0-9_]+$ ]] || continue
-    [[ "$value" =~ ^[A-Za-z0-9._,/%-]+$ ]] || continue
-    printf '    %s = %s\n' "$key" "$value" >>"$s3_block_file"
-    s3_summary="${s3_summary} ${key}=${value}"
+    [[ "$s3_setting" =~ ^[a-z0-9_]+$ ]] || continue
+    [[ "$s3_setting_value" =~ ^[A-Za-z0-9._,/%-]+$ ]] || continue
+    printf '    %s = %s\n' "$s3_setting" "$s3_setting_value" >>"$s3_block_file"
+    s3_summary="${s3_summary} ${s3_setting}=${s3_setting_value}"
   done <"$inherited_s3"
 fi
 echo "log-transfer s3: ${s3_summary}" >&2

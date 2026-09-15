@@ -274,6 +274,25 @@ assert "max_bandwidth = 10MB/s" in named
   [[ "$output" != *"sso_start_url"* ]]
 }
 
+@test "log-transfer keeps the generated object key when inheriting S3 settings" {
+  mkdir -p "$HOME_DIR/.aws"
+  cat >"$HOME_DIR/.aws/config" <<'EOF'
+[profile operator-sso]
+s3 =
+    max_concurrent_requests = 20
+    multipart_threshold = 8MB
+    max_bandwidth = 10MB/s
+EOF
+  run "$LOG_TRANSFER" "$SRC_DIR/app.log"
+  echo "status=$status output=$output aws=$(cat "$AWS_LOG")"
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == *".zip"* ]]
+  [[ "$output" != *"prefix=max_bandwidth"* ]]
+  [[ "$output" != *"prefix=multipart_threshold"* ]]
+  grep -qE 's3://jh-log-test/[a-z0-9_]+/[0-9]{8}T[0-9]{6}Z-.+\.zip' "$AWS_LOG"
+  ! grep -q 's3://jh-log-test/max_bandwidth' "$AWS_LOG"
+}
+
 @test "log-transfer accepts large zip listings without SIGPIPE" {
   cat >"$FAKE_BIN/zipinfo" <<'EOF'
 #!/usr/bin/env bash
