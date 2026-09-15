@@ -1,6 +1,8 @@
 # jump_hosts module
 
-Provisions private EC2 jump hosts with IMDSv2-only metadata configuration, least-privilege SSM instance role, and dedicated persistent `/home` EBS volumes.
+Provisions private EC2 jump hosts with IMDSv2-only metadata configuration, an SSM-only instance role, and dedicated persistent `/home` EBS volumes.
+
+The instance role is intentionally without significant privileges: SSM agent operations and interactive Session Manager sessions only. Operators bring their own credentials for environment work (`log-transfer`, EKS, and other AWS APIs). Do not attach extra environment IAM to this role.
 
 ## Inputs
 
@@ -54,5 +56,5 @@ Home EBS volumes are separate resources from instances, so replacing an instance
 - `hosts`: metadata map containing instance IDs, private IPs, AZ, and home volume IDs.
 - `created_security_group_ids`: SG IDs created when host SGs were not supplied.
 - `instance_profile_arn`: IAM profile ARN attached to instances.
-- `instance_role_arn`: IAM role ARN assumed by jump host EC2 instances.
+- `instance_role_arn`: IAM role ARN assumed by jump host EC2 instances (SSM-only by design).
 - `instance_role_name`: IAM role name assumed by jump host EC2 instances.

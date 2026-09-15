@@ -8,6 +8,8 @@ For AWS Security/IAM and user provisioning prerequisites, use:
 
 - `docs/security-user-prerequisites.md`
 
+Operators authenticate with their own Identity Center / IAM credentials. The jump-host EC2 instance role is intentionally without significant privileges (SSM agent and interactive sessions only); it is not used for `log-transfer` or other environment API calls.
+
 For cost planning and estimation framework, use:
 
 - `docs/cost-estimation.md`
@@ -112,7 +114,7 @@ For host configuration changes that do not recreate jump hosts (for example user
 
 - `./scripts/orchestrate.sh configure --live-dir ...`
 
-`configure` applies the `log-transfer` stack (so bucket-policy downloader grants match `users[].iam_role_arns`) and then runs Ansible. Other stacks are not applied. Use `--auto-approve` for non-interactive runs. Users with `state: absent` are omitted from the bucket policy.
+`configure` applies the `log-transfer` stack (so bucket-policy upload and download grants match `users[].iam_role_arns`) and then runs Ansible. Other stacks are not applied. Use `--auto-approve` for non-interactive runs. Users with `state: absent` are omitted from the bucket policy.
 
 For teardown:
 
@@ -129,7 +131,7 @@ External vars must follow:
 - `sudo_profile` (required: `none|ops|admin`)
 - optional `state`; optional `shell` and `home` (absolute paths when set)
 - optional `access_profile` (required when `iam_role_arns` is set)
-- optional `iam_role_arns` (list of IAM role ARNs to allowlist for SSM session start)
+- optional `iam_role_arns` (list of IAM role ARNs to allowlist for SSM session start and for log-transfer upload/download)
 - optional `ssm_session_linux_user` (defaults to `username`; used for `SSMSessionRunAs` mapping)
 
 If `iam_role_arns` are provided, the `ssm-self-management` stack maps each role to that user's `access_profile` and Linux user and attaches an inline IAM policy that restricts Session Manager access to:

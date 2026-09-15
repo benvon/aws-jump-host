@@ -56,11 +56,19 @@ grep -q 'AWS_EC2_METADATA_DISABLED=true' "$helper" \
 
 docs="$root/docs/consumer-guide.md"
 mod_readme="$root/modules/terraform/log_transfer/README.md"
+readme="$root/README.md"
+arch="$root/docs/architecture.md"
 grep -q 'pull an archive back onto the jump host' "$docs" \
   && fail "consumer-guide must not document instance-role host-side download"
 grep -q 'operator credentials' "$docs" \
   || fail "consumer-guide must document that log-transfer uses operator credentials"
+grep -q 'intentionally without significant' "$docs" \
+  || fail "consumer-guide must state the instance role is intentionally without significant privileges"
 grep -q 'pull an archive back onto the jump host' "$mod_readme" \
   && fail "log_transfer README must not document instance-role host-side download"
+grep -q 'intentionally without significant IAM role privileges' "$readme" \
+  || fail "README must state the jump-host instance is intentionally without significant IAM role privileges"
+grep -q 'SSM-only by design' "$arch" \
+  || fail "architecture.md must state jump-host instance IAM is SSM-only by design"
 
 echo "log-transfer contract OK"

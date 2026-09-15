@@ -15,7 +15,7 @@ This directory contains reference-only Terragrunt configurations.
 - `observability`
 - `ssm-self-management` (optional; in-account Session Manager setting management)
 - `vpc-endpoints`
-- `log-transfer`
+- `log-transfer` (private S3 bucket for operator log archives; upload/download use operator IAM roles, not the instance role)
 - `jump-hosts`
 
 ## Suggested Adoption

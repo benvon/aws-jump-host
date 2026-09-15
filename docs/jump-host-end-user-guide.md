@@ -10,6 +10,8 @@ Your organization should give you:
 
 If `aws ssm start-session` fails with permission errors, your security team can use `docs/security-user-prerequisites.md` as the IAM checklist.
 
+The jump host itself has **no significant AWS privileges**. The EC2 instance role is only for the SSM agent and your interactive session. Once you are on the host, AWS CLI tools (`awslogin`, `kubelogin`, `log-transfer`) use **your** SSO profile or exported keys, not the instance role. Run `awslogin` if your session credentials have expired.
+
 ---
 
 ## Quick start (recommended): helper script
@@ -101,7 +103,7 @@ Package local files or directories and upload them for browser download via the 
 log-transfer /path/to/file.log ./coredump.dir
 ```
 
-The command prints an S3 console URL. Open it, sign in with SSO if prompted, and download the object. You need an IAM role listed in this environment’s `users.yaml` `iam_role_arns`. `log-transfer` uses those same operator credentials (`AWS_PROFILE` from `awslogin` / login env, or keys you export). It does not use the EC2 instance role. Archives expire after two years. You need free space on `/home` roughly equal to the zip size while it is being built.
+The command prints an S3 console URL. Open it, sign in with SSO if prompted, and download the object. You need an IAM role listed in this environment’s `users.yaml` `iam_role_arns` (that role is allowed to upload and to download). `log-transfer` uses your operator credentials (`AWS_PROFILE` from `awslogin` / login env, or keys you export). It disables the instance metadata service for that upload so the EC2 instance role cannot be used. If you have not logged in, or your role is not in the bucket policy, the upload fails. Archives expire after two years. You need free space on `/home` roughly equal to the zip size while it is being built.
 
 ### Choosing the Linux (OS) user for the session
 
@@ -206,6 +208,7 @@ Use the instance id in the first column with `aws ssm start-session --target`. (
 | `Session Manager plugin not found` | Install the plugin; restart the terminal. |
 | `Token has expired` / SSO errors | Run `aws sso login --profile ...` again. |
 | `AccessDeniedException` on `start-session` | IAM: role needs SSM permissions and ABAC/tag conditions must match the instance (`JumpHost`, `AccessProfile`). See `docs/security-user-prerequisites.md`. |
+| `log-transfer` fails with AccessDenied or “Unable to locate credentials” | The instance role cannot upload. Run `awslogin`, confirm `AWS_PROFILE`, and ensure your role is in this environment’s `users.yaml` `iam_role_arns`. |
 | SSM connects but wrong Linux user | Run As is set by IAM tag `SSMSessionRunAs` (or IdP session tags) or the account default in Session Manager preferences—not via a CLI flag on the standard shell document. |
 | Script lists no hosts | Wrong account, region, or tags; confirm `JumpHost=true` and instance is **running**. |
 | SSM or **Ansible** (`aws_ssm`) sessions drop or hang after editing `shellProfile.linux` | `terraform apply` the `ssm-self-management` stack to restore the repo default (`. /etc/profile.d/jump-host-login-env.sh 2>/dev/null || true; . /etc/profile.d/jump-host-path.sh 2>/dev/null || true; cd $HOME; exec bash -i`), or set `linux_shell_profile = ""` in that stack for stock `/bin/sh` while troubleshooting. |
@@ -215,4 +218,5 @@ Use the instance id in the first column with `aws ssm start-session --target`. (
 ## Related documentation
 
 - IAM / Session Manager requirements for security teams: `docs/security-user-prerequisites.md`
+- Architecture (SSM-only instance role): `docs/architecture.md`
 - How this repo applies baseline AWS tags: `docs/consumer-guide.md` (Global AWS tags)

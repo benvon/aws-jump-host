@@ -140,6 +140,8 @@ data "aws_iam_policy_document" "ec2_assume_role" {
 }
 
 resource "aws_iam_role" "instance" {
+  # SSM-only by design: agent + interactive sessions. Operators bring their own
+  # credentials for environment APIs (log-transfer, EKS, and so on).
   name_prefix        = "${var.name_prefix}-instance-"
   assume_role_policy = data.aws_iam_policy_document.ec2_assume_role.json
   tags               = var.common_tags

@@ -14,7 +14,7 @@ The resulting platform provisions private jump hosts reachable through AWS Sessi
 ## Security Baseline
 
 - EC2 metadata service requires IMDSv2 tokens.
-- Instance IAM role is scoped to SSM agent operations and does not include broad administrative actions.
+- **Jump-host instance IAM is SSM-only by design.** The EC2 instance is intentionally without significant role privileges: the instance role covers SSM agent operation and interactive Session Manager sessions, and nothing else in the environment (no S3, EKS, or other AWS API rights). Operators bring their own Identity Center / IAM credentials into the session (`AWS_PROFILE` or exported keys) for tools such as `log-transfer`, `awslogin`, and `kubelogin`. The helper disables IMDS so those tools cannot fall back to the instance profile.
 - Session logging is expected in CloudWatch and validated pre-apply.
 - Access control remains centrally managed in IAM Identity Center, integrated via deterministic instance tags.
 - Local user accounts have locked passwords and no SSH key provisioning by default.
@@ -23,12 +23,12 @@ The resulting platform provisions private jump hosts reachable through AWS Sessi
 
 ### Terraform modules
 
-- `modules/terraform/jump_hosts`: EC2 hosts, instance profile, optional default SG, and persistent `/home` EBS volumes.
+- `modules/terraform/jump_hosts`: EC2 hosts, SSM-only instance profile, optional default SG, and persistent `/home` EBS volumes.
 - `modules/terraform/vpc_endpoints_ssm`: shared interface endpoints for private SSM/CloudWatch connectivity, with optional extra AWS API endpoints (for example EKS management APIs) and S3 gateway access.
 - `modules/terraform/observability`: CloudWatch log group and optional KMS key; optional metric filter and alarm hooks (disabled by default) for future SNS paging.
 - `modules/terraform/ssm_session_manager_settings`: Session Manager account-level preferences via `SSM-SessionManagerRunShell`.
 - `modules/terraform/remote_state_s3`: encrypted versioned S3 state bucket.
-- `modules/terraform/log_transfer`: private per-environment bucket for operator log archives; upload and console download via operator `users[].iam_role_arns` (not the instance role).
+- `modules/terraform/log_transfer`: private per-environment bucket for operator log archives. Upload and console download use the operator’s `users[].iam_role_arns` via bucket policy; the instance role is not granted S3 access.
 
 ### Terragrunt
 

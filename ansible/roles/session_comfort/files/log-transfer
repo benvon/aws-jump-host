@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Jump-host helper: zip caller paths, multipart-upload to the log-transfer bucket, print console URL.
+# Uses the operator's AWS_PROFILE / keys. The EC2 instance role is SSM-only and is not used.
 set -euo pipefail
 
 die() {

@@ -10,6 +10,7 @@ jump_host_eks_cluster_name: ""
 
 # Log-transfer bucket/region for /usr/local/bin/log-transfer (written to /etc/jump-host-log-transfer-*).
 # orchestrate.sh configure sets these from the log-transfer stack outputs.
+# The helper uploads with the operator's AWS_PROFILE / keys, not the instance role.
 jump_host_log_transfer_bucket: ""
 jump_host_log_transfer_region: ""
 

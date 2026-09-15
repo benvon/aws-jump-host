@@ -1,7 +1,7 @@
 # Log-transfer bucket and jump-host helper
 
 Date: 2026-09-11  
-Status: approved design (implementation not started)
+Status: approved design (implemented). The jump-host EC2 instance role is SSM-only; operators bring their own credentials for `log-transfer`.
 
 ## Goal
 
@@ -21,6 +21,7 @@ Operators on a jump host can zip caller-supplied local files/directories, upload
 | --- | --- |
 | Download | S3 console object URL (login, then object) |
 | Who can upload/download | `users.yaml` / extra-vars `users[].iam_role_arns` (v1, whole bucket). The EC2 instance role is not granted S3 access. |
+| Instance IAM | SSM agent and interactive Session Manager only. Operators bring their own Identity Center / IAM credentials for environment APIs, including `log-transfer`. |
 | What to zip | Only paths passed on the CLI |
 | Bucket cardinality | One per env/subenv/region |
 | Layout | Dedicated Terragrunt stack + Terraform module (not inside `jump_hosts`, not the state/SSM-transfer bucket) |

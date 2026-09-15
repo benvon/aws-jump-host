@@ -32,7 +32,9 @@ jump_host_helm_version_extra: "3.15.0"
 users:
   - username: jumpops
     access_profile: ops
-    # Optional: allowlist IAM roles that may start SSM sessions as this Linux user.
+    # Optional: IAM roles for this Linux user. Used to allowlist SSM session start
+    # and (same ARNs) log-transfer upload/download via the bucket policy. The
+    # jump-host instance role is SSM-only; operators must use these credentials.
     iam_role_arns:
       - arn:aws:iam::123456789012:role/AWSReservedSSO_jumpops-access_aaaaaaaaaaaaaaaa
     groups:

@@ -1,10 +1,12 @@
 # Log-Transfer Implementation Plan
 
+> **Current design:** operators upload and download with their own SSO/IAM credentials. The jump-host EC2 instance role is SSM-only and is not granted log-transfer S3 access. Treat `docs/superpowers/specs/2026-09-11-log-transfer-design.md` as authoritative; the Architecture / IAM bullets below are historical.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Operators on a jump host can zip caller-supplied paths, multipart-upload the archive to a private per-environment S3 bucket, and get an AWS console object URL that goes through SSO login.
 
-**Architecture:** A new Terragrunt stack `log-transfer` (Terraform module) sits beside `jump-hosts`. The instance role gets upload/multipart IAM; `users[].iam_role_arns` get download via bucket policy (SSO roles are not mutated). Ansible installs `/usr/local/bin/log-transfer` and `/etc/jump-host-log-transfer-{bucket,region}`. Uploads use instance-role credentials and AWS CLI multipart config, not `AWS_PROFILE`.
+**Architecture:** A new Terragrunt stack `log-transfer` (Terraform module) sits beside `jump-hosts`. Operator `users[].iam_role_arns` get upload and download via bucket policy (SSO roles are not mutated; the instance role is not granted S3). Ansible installs `/usr/local/bin/log-transfer` and `/etc/jump-host-log-transfer-{bucket,region}`. Uploads use the operator’s `AWS_PROFILE` / keys and AWS CLI multipart config; IMDS is disabled so the instance role cannot be used.
 
 **Tech Stack:** Terraform ~> 1.10, AWS provider ~> 6.0, Terragrunt, Ansible, Bash 3.2-compatible helper, bats-core.
 
