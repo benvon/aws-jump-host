@@ -55,6 +55,21 @@ setup() {
 if [[ "${FAKE_AWS_FAIL:-}" == "1" ]]; then
   exit 1
 fi
+if [[ -n "${AWS_CONFIG_FILE:-}" && -f "${AWS_CONFIG_FILE}" ]]; then
+  if awk '
+    /^\[/ { sec=$0; next }
+    /^[[:space:]]*s3[[:space:]]*=/ {
+      if (seen[sec]++) {
+        print "duplicate s3 key in " sec > "/dev/stderr"
+        exit 1
+      }
+    }
+  ' "${AWS_CONFIG_FILE}"; then
+    :
+  else
+    exit 1
+  fi
+fi
 exit 0
 EOF
   cat >"$FAKE_BIN/zip" <<'EOF'
@@ -166,6 +181,37 @@ teardown() {
   grep -q 'multipart_threshold = 16MB' "$AWS_LOG"
   grep -q 'multipart_chunksize = 64MB' "$AWS_LOG"
   ! find "$HOME_DIR/.cache/log-transfer" -name '*.zip' 2>/dev/null | grep -q .
+}
+
+@test "log-transfer replaces an existing profile s3 block instead of duplicating it" {
+  mkdir -p "$HOME_DIR/.aws"
+  cat >"$HOME_DIR/.aws/config" <<'EOF'
+[profile operator-sso]
+sso_start_url = https://example.awsapps.com/start
+sso_region = us-west-2
+s3 =
+    max_concurrent_requests = 20
+    multipart_threshold = 8MB
+region = us-west-2
+EOF
+  run "$LOG_TRANSFER" "$SRC_DIR/app.log"
+  echo "status=$status output=$output aws=$(cat "$AWS_LOG")"
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == *"s3.console.aws.amazon.com"* ]]
+  grep -q 'PROFILE=operator-sso' "$AWS_LOG"
+  grep -q 'sso_start_url = https://example.awsapps.com/start' "$AWS_LOG"
+  grep -q 'multipart_threshold = 16MB' "$AWS_LOG"
+  python3 -c '
+import pathlib, sys
+text = pathlib.Path(sys.argv[1]).read_text()
+start = text.index("CONFIG_BEGIN")
+end = text.index("CONFIG_END")
+cfg = text[start:end]
+sec = cfg.split("[profile operator-sso]", 1)[1]
+rest = sec.split("[", 1)[0]
+assert rest.count("s3 =") == 1, rest
+assert "sso_start_url = https://example.awsapps.com/start" in rest
+' "$AWS_LOG"
 }
 
 @test "log-transfer accepts large zip listings without SIGPIPE" {

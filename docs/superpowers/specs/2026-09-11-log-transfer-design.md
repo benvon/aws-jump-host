@@ -102,7 +102,7 @@ Behavior:
 4. Object key: `<linux-user>/<UTC timestamp YYYYMMDDTHHMMSSZ>-<hostname>-<4-char suffix>.zip`.
 5. Upload with `aws s3 cp` using:
    - **Operator credentials** — keep `AWS_PROFILE` / `AWS_DEFAULT_PROFILE` / access keys from the session (`jump_host_login_env` SSO). Disable IMDS (`AWS_EC2_METADATA_DISABLED=true`) so the instance role cannot be used. Unset leftover web-identity and container credential variables so they cannot override the operator profile.
-   - A process-local `AWS_CONFIG_FILE` that copies the operator’s AWS config (so SSO profiles still resolve) and sets `s3.multipart_threshold = 16MB` and `s3.multipart_chunksize = 64MB` (and a modest `max_concurrent_requests`) so large archives use multipart, not a single `PutObject`
+   - A process-local `AWS_CONFIG_FILE` that copies the operator’s AWS config (so SSO profiles still resolve), replaces any existing nested `s3 =` block on the active profile, and sets `s3.multipart_threshold = 16MB` and `s3.multipart_chunksize = 64MB` (and a modest `max_concurrent_requests`) so large archives use multipart, not a single `PutObject`
 6. On success, delete the local zip and print one S3 console object URL, then exit 0:
 
    `https://s3.console.aws.amazon.com/s3/object/<bucket>?region=<region>&prefix=<key>`

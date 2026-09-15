@@ -89,15 +89,50 @@ if [[ -n "${AWS_PROFILE:-}" && "${AWS_PROFILE}" != default ]]; then
 else
   s3_section="default"
 fi
-s3_block=$'s3 =\n    multipart_threshold = 16MB\n    multipart_chunksize = 64MB\n    max_concurrent_requests = 4'
-if grep -Fq "[${s3_section}]" "$aws_config"; then
-  awk -v sec="[${s3_section}]" -v block="$s3_block" '
-    $0 == sec && !done { print; print block; done = 1; next }
-    { print }
-  ' "$aws_config" >"${aws_config}.new" && mv "${aws_config}.new" "$aws_config"
-else
-  printf '\n[%s]\n%s\n' "$s3_section" "$s3_block" >>"$aws_config"
-fi
+s3_block_file="${work_dir}/s3-block"
+cat >"$s3_block_file" <<'EOF'
+s3 =
+    multipart_threshold = 16MB
+    multipart_chunksize = 64MB
+    max_concurrent_requests = 4
+EOF
+awk -v sec="[${s3_section}]" -v blockfile="$s3_block_file" '
+  BEGIN {
+    while ((getline line < blockfile) > 0) {
+      block = block line ORS
+    }
+    close(blockfile)
+  }
+  function inject() {
+    printf "%s", block
+    injected = 1
+  }
+  {
+    if ($0 ~ /^\[/) {
+      skip = 0
+      in_target = ($0 == sec)
+      print
+      if (in_target) inject()
+      next
+    }
+    if (in_target && $0 ~ /^[[:space:]]*s3[[:space:]]*=/) {
+      skip = 1
+      next
+    }
+    if (skip) {
+      if ($0 ~ /^[[:space:]]+/ || $0 ~ /^[[:space:]]*$/) next
+      skip = 0
+    }
+    print
+  }
+  END {
+    if (!injected) {
+      print ""
+      print sec
+      printf "%s", block
+    }
+  }
+' "$aws_config" >"${aws_config}.new" && mv "${aws_config}.new" "$aws_config"
 
 env -u AWS_WEB_IDENTITY_TOKEN_FILE -u AWS_ROLE_ARN -u AWS_ROLE_SESSION_NAME \
   -u AWS_CONTAINER_CREDENTIALS_RELATIVE_URI -u AWS_CONTAINER_CREDENTIALS_FULL_URI \
