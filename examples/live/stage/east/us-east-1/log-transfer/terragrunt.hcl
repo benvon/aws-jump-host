@@ -23,24 +23,12 @@ locals {
   )
 }
 
-dependency "jump_hosts" {
-  config_path = "../jump-hosts"
-
-  mock_outputs_allowed_terraform_commands = ["validate", "plan", "init"]
-  mock_outputs = {
-    instance_role_arn  = "arn:aws:iam::111111111111:role/mock-jump-instance"
-    instance_role_name = "mock-jump-instance"
-  }
-}
-
 terraform {
   source = "../../../../../../modules/terraform/log_transfer"
 }
 
 inputs = {
   bucket_name          = "jh-log-${include.root.locals.account_id}-${include.root.locals.env}-${include.root.locals.subenv}-${include.root.locals.aws_region}"
-  instance_role_arn    = dependency.jump_hosts.outputs.instance_role_arn
-  instance_role_name   = dependency.jump_hosts.outputs.instance_role_name
   downloader_role_arns = local.downloader_role_arns
   retention_days       = 730
   tags = merge(include.root.locals.common_tags, {

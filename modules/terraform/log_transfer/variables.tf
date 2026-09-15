@@ -3,18 +3,8 @@ variable "bucket_name" {
   type        = string
 }
 
-variable "instance_role_arn" {
-  description = "Jump host instance role ARN allowed to upload archives."
-  type        = string
-}
-
-variable "instance_role_name" {
-  description = "Jump host instance role name to attach the upload inline policy."
-  type        = string
-}
-
 variable "downloader_role_arns" {
-  description = "IAM role ARNs allowed to download via the AWS console (typically users[].iam_role_arns). Empty means uploads only."
+  description = "IAM role ARNs allowed to upload and download log archives (typically users[].iam_role_arns). Empty means nobody can upload or download until ARNs are set."
   type        = list(string)
   default     = []
 }

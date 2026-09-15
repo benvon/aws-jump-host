@@ -20,7 +20,7 @@ Operators on a jump host can zip caller-supplied local files/directories, upload
 | Topic | Choice |
 | --- | --- |
 | Download | S3 console object URL (login, then object) |
-| Who can download | `users.yaml` / extra-vars `users[].iam_role_arns` (v1, whole bucket) |
+| Who can upload/download | `users.yaml` / extra-vars `users[].iam_role_arns` (v1, whole bucket). The EC2 instance role is not granted S3 access. |
 | What to zip | Only paths passed on the CLI |
 | Bucket cardinality | One per env/subenv/region |
 | Layout | Dedicated Terragrunt stack + Terraform module (not inside `jump_hosts`, not the state/SSM-transfer bucket) |
@@ -34,11 +34,11 @@ New stack `log-transfer` lives beside `jump-hosts` in the live layout:
 
 `<live-root>/<env>/<subenv>/<region>/log-transfer`
 
-`orchestrate.sh` applies it **after** `jump-hosts` (needs the instance role) and destroys it **before** `jump-hosts`.
+`orchestrate.sh` applies it **after** `jump-hosts` and destroys it **before** `jump-hosts`.
 
 Uploads stay on the existing S3 gateway VPC endpoint. Console downloads happen from the operator’s browser using their SSO/IAM credentials; the bucket policy must **not** require `aws:SourceVpce` on `GetObject`.
 
-Same-account S3 allows an allow from identity **or** resource policy. This design uses **both**: bucket policy (downloaders + instance) and an inline policy on the jump-host instance role (upload/multipart). Downloader access is resource-based so reserved SSO roles are not mutated.
+Same-account S3 allows an allow from identity **or** resource policy. This design uses **resource policy only**: bucket policy for operator `iam_role_arns` (upload and download). Reserved SSO roles are not mutated. The jump-host instance role stays SSM-only (agent + interactive sessions) and is not granted log-transfer S3 actions.
 
 ## Components
 
@@ -53,28 +53,21 @@ Creates:
 - Lifecycle: expire objects after `retention_days` (default 730); abort incomplete multipart after 7 days
 - Bucket policy:
   - Deny `s3:*` when `aws:SecureTransport` is false
-  - Allow instance role: `s3:PutObject` (covers create/upload-part/complete multipart), `s3:GetObject`, `s3:AbortMultipartUpload`, `s3:ListMultipartUploadParts`, `s3:ListBucketMultipartUploads`, `s3:ListBucket`, `s3:GetBucketLocation`. `GetObject`/`ListBucket` on the shared instance role are intentional so operators can pull archives back onto the jump host; console download after SSO still uses `downloader_role_arns`.
-  - Allow each downloader role ARN: `s3:GetObject`, `s3:ListBucket`, `s3:GetBucketLocation` (console object page)
-- Inline IAM policy on the existing jump-host instance role with the same upload/multipart actions, resource-scoped to this bucket
+  - Allow each operator role ARN (`downloader_role_arns` / `users[].iam_role_arns`): `s3:PutObject` (covers create/upload-part/complete multipart), `s3:GetObject`, `s3:AbortMultipartUpload`, `s3:ListMultipartUploadParts`, `s3:ListBucketMultipartUploads`, `s3:ListBucket`, `s3:GetBucketLocation`
+- No inline IAM policy on the jump-host instance role
 
 Accepted Checkov/tfsec skips (documented on the resources): no CMK, no access-log bucket, no versioning, no event notifications, no CRR.
 
-Inputs (minimum): `bucket_name`, `instance_role_name`, `instance_role_arn`, `downloader_role_arns` (list, may be empty), `retention_days`, `tags`.
+Inputs (minimum): `bucket_name`, `downloader_role_arns` (list, may be empty), `retention_days`, `tags`.
 
 Outputs: `bucket_name`, `bucket_arn`, `region` (from provider).
 
-Empty `downloader_role_arns` is valid Terraform: only the instance can write; console downloads 403 until ARNs are set. Document that in the consumer guide.
-
-### `jump_hosts` outputs
-
-Add `instance_role_arn` and `instance_role_name` so `log-transfer` can depend on the existing role without recreating it.
+Empty `downloader_role_arns` is valid Terraform: nobody can upload or download until ARNs are set. Document that in the consumer guide.
 
 ### Terragrunt stack
 
 `examples/live/<env>/<subenv>/<region>/log-transfer/terragrunt.hcl`:
 
-- `dependencies { paths = ["../jump-hosts"] }`
-- `instance_role_*` from `dependency.jump-hosts.outputs`
 - Flatten unique `users[].iam_role_arns` from the extra-vars file (same `find_in_parent_folders` pattern as private `ssm-self-management`; examples may pass a local path or empty list)
 - Fail closed through `scripts/validate_users_vars.py` (the users policy helper: orchestrate, Ansible `user_accounts --json`, and each log-transfer stack via `run_cmd --print-downloader-arns`). Rules match what `useradd`/`ansible.builtin.user` would accept, including Linux username syntax, unique names, list types, and present-vs-null optional keys. Downloader ARNs come only from that helper (absent users omitted). Orchestrate exports `JUMP_HOST_USERS_VALIDATOR` so `run_cmd` still finds that script when `--live-dir` is a separate repository (`get_repo_root()` would not).
 - Default bucket name derived from account id, env, subenv, and region (63-char S3 limit; hyphens only). Overridable via input.
@@ -107,8 +100,8 @@ Behavior:
 3. Create a zip under a uniquely created directory in `$HOME/.cache/log-transfer` (persistent home volume, not root disk; `mktemp -d` so a reused PID cannot reopen a leftover archive). Include the given files/directories; rewrite a path that is exactly `-` to `./-` so Info-ZIP archives that filesystem name instead of stdin. Fail if the zip is empty.
 4. Object key: `<linux-user>/<UTC timestamp YYYYMMDDTHHMMSSZ>-<hostname>-<4-char suffix>.zip`.
 5. Upload with `aws s3 cp` using:
-   - **Instance role credentials** — unset `AWS_PROFILE` / `AWS_DEFAULT_PROFILE` for that invocation so `jump_host_login_env` SSO profiles are not used
-   - A process-local `AWS_CONFIG_FILE` that sets `s3.multipart_threshold = 16MB` and `s3.multipart_chunksize = 64MB` (and a modest `max_concurrent_requests`) so large archives use multipart, not a single `PutObject`
+   - **Operator credentials** — keep `AWS_PROFILE` / `AWS_DEFAULT_PROFILE` / access keys from the session (`jump_host_login_env` SSO). Disable IMDS (`AWS_EC2_METADATA_DISABLED=true`) so the instance role cannot be used. Unset leftover web-identity and container credential variables so they cannot override the operator profile.
+   - A process-local `AWS_CONFIG_FILE` that copies the operator’s AWS config (so SSO profiles still resolve) and sets `s3.multipart_threshold = 16MB` and `s3.multipart_chunksize = 64MB` (and a modest `max_concurrent_requests`) so large archives use multipart, not a single `PutObject`
 6. On success, delete the local zip and print one S3 console object URL, then exit 0:
 
    `https://s3.console.aws.amazon.com/s3/object/<bucket>?region=<region>&prefix=<key>`
@@ -122,7 +115,7 @@ Operators need free disk on `/home` of about the archive size while the zip exis
 ```
 operator → log-transfer [paths]
         → zip on $HOME/.cache/log-transfer
-        → aws s3 cp (multipart, instance role, S3 gateway endpoint)
+        → aws s3 cp (multipart, operator credentials, S3 gateway endpoint)
         → stdout: console URL
 operator browser → AWS console login/SSO → GetObject as iam_role_arns principal
 lifecycle → expire object at 730 days; abort stale multipart at 7 days
@@ -140,7 +133,7 @@ If the object exists but the operator’s role is not in `iam_role_arns` (or an 
 
 ## Testing
 
-- **Bats** (`tests/shell/log-transfer.bats`): fake `aws` and `zip`; missing args/config fail; given files are zipped; `aws s3 cp` is invoked with the expected bucket/key and without `AWS_PROFILE`; multipart config is present (`multipart_threshold` / `multipart_chunksize`); stdout contains the console URL with bucket, region, and key; temp zip is gone after success; failed `cp` yields no URL.
+- **Bats** (`tests/shell/log-transfer.bats`): fake `aws` and `zip`; missing args/config fail; given files are zipped; `aws s3 cp` is invoked with the expected bucket/key and the operator `AWS_PROFILE` (IMDS disabled); multipart config is present (`multipart_threshold` / `multipart_chunksize`); stdout contains the console URL with bucket, region, and key; temp zip is gone after success; failed `cp` yields no URL.
 - **Orchestrate bats**: `log-transfer` appears after jump-hosts on apply and before jump-hosts on destroy (extend `tests/shell/orchestrate.bats`; add the example stack so directory checks pass).
 - **Ansible**: playbook syntax-check and ansible-lint for the new files/tasks.
 - **Terraform**: `make validate` / Checkov on the new module; documented skips only as listed above.

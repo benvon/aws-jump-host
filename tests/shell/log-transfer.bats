@@ -17,11 +17,14 @@ setup() {
   export JUMP_HOST_LOG_TRANSFER_BUCKET="jh-log-test"
   export JUMP_HOST_LOG_TRANSFER_REGION="us-west-2"
   export PATH="${FAKE_BIN}:${PATH}"
-  export AWS_PROFILE=should-not-be-used
-  export AWS_DEFAULT_PROFILE=also-should-not
-  export AWS_ACCESS_KEY_ID=should-not-be-used
-  export AWS_SECRET_ACCESS_KEY=also-should-not
-  export AWS_SESSION_TOKEN=session-should-not
+  export AWS_PROFILE=operator-sso
+  export AWS_DEFAULT_PROFILE=operator-sso
+  export AWS_ACCESS_KEY_ID=operator-key
+  export AWS_SECRET_ACCESS_KEY=operator-secret
+  export AWS_SESSION_TOKEN=operator-session
+  export AWS_WEB_IDENTITY_TOKEN_FILE=/tmp/should-not-use-web-identity
+  export AWS_ROLE_ARN=arn:aws:iam::123456789012:role/should-not-use
+  export AWS_CONTAINER_CREDENTIALS_RELATIVE_URI=/v2/credentials/should-not
   printf 'hello\n' >"$SRC_DIR/app.log"
   mkdir -p "$SRC_DIR/nested"
   printf 'inner\n' >"$SRC_DIR/nested/a.txt"
@@ -36,6 +39,10 @@ setup() {
   echo "SESSION_TOKEN=${AWS_SESSION_TOKEN-<unset>}"
   echo "SHARED_CREDENTIALS_FILE=${AWS_SHARED_CREDENTIALS_FILE-<unset>}"
   echo "CONFIG_FILE=${AWS_CONFIG_FILE-<unset>}"
+  echo "EC2_METADATA_DISABLED=${AWS_EC2_METADATA_DISABLED-<unset>}"
+  echo "WEB_IDENTITY_TOKEN_FILE=${AWS_WEB_IDENTITY_TOKEN_FILE-<unset>}"
+  echo "ROLE_ARN=${AWS_ROLE_ARN-<unset>}"
+  echo "CONTAINER_CREDS=${AWS_CONTAINER_CREDENTIALS_RELATIVE_URI-<unset>}"
   if [[ -n "${AWS_CONFIG_FILE:-}" && -f "${AWS_CONFIG_FILE}" ]]; then
     echo "CONFIG_BEGIN"
     cat "${AWS_CONFIG_FILE}"
@@ -136,7 +143,7 @@ teardown() {
   [[ "$output" != *"s3.console.aws.amazon.com"* ]]
 }
 
-@test "log-transfer uploads with multipart config, instance role, and console URL" {
+@test "log-transfer uploads with multipart config, operator credentials, and console URL" {
   run "$LOG_TRANSFER" "$SRC_DIR/app.log" "$SRC_DIR/nested"
   echo "status=$status output=$output aws=$(cat "$AWS_LOG")"
   [[ "$status" -eq 0 ]]
@@ -145,12 +152,16 @@ teardown() {
   grep -q 's3 cp' "$AWS_LOG"
   grep -q 's3://jh-log-test/' "$AWS_LOG"
   grep -q -- '--only-show-errors' "$AWS_LOG"
-  grep -q 'PROFILE=<unset>' "$AWS_LOG"
-  grep -q 'DEFAULT_PROFILE=<unset>' "$AWS_LOG"
-  grep -q 'ACCESS_KEY_ID=<unset>' "$AWS_LOG"
-  grep -q 'SECRET_ACCESS_KEY=<unset>' "$AWS_LOG"
-  grep -q 'SESSION_TOKEN=<unset>' "$AWS_LOG"
-  grep -q 'SHARED_CREDENTIALS_FILE=/dev/null' "$AWS_LOG"
+  grep -q 'PROFILE=operator-sso' "$AWS_LOG"
+  grep -q 'DEFAULT_PROFILE=operator-sso' "$AWS_LOG"
+  grep -q 'ACCESS_KEY_ID=operator-key' "$AWS_LOG"
+  grep -q 'SECRET_ACCESS_KEY=operator-secret' "$AWS_LOG"
+  grep -q 'SESSION_TOKEN=operator-session' "$AWS_LOG"
+  ! grep -q 'SHARED_CREDENTIALS_FILE=/dev/null' "$AWS_LOG"
+  grep -q 'EC2_METADATA_DISABLED=true' "$AWS_LOG"
+  grep -q 'WEB_IDENTITY_TOKEN_FILE=<unset>' "$AWS_LOG"
+  grep -q 'ROLE_ARN=<unset>' "$AWS_LOG"
+  grep -q 'CONTAINER_CREDS=<unset>' "$AWS_LOG"
   grep -q -- '--storage-class INTELLIGENT_TIERING' "$AWS_LOG"
   grep -q 'multipart_threshold = 16MB' "$AWS_LOG"
   grep -q 'multipart_chunksize = 64MB' "$AWS_LOG"

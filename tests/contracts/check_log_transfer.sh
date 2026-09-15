@@ -4,12 +4,13 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 fail() { echo "contract check failed: $*" >&2; exit 1; }
 
-# Fresh log-transfer stacks must mock jump-hosts outputs during init as well as
-# validate/plan: orchestrate and the optional AWS plan workflow run
-# `terragrunt init` before jump-hosts has been applied.
+# log-transfer no longer attaches IAM to the jump-host instance role, so the
+# stack must not depend on jump-hosts outputs.
 while IFS= read -r -d '' f; do
-  grep -Eq 'mock_outputs_allowed_terraform_commands[[:space:]]*=[[:space:]]*\[[^]]*init[^]]*\]' "$f" \
-    || fail "log-transfer mock allowlist must include init in $f"
+  grep -q 'instance_role_' "$f" \
+    && fail "log-transfer must not pass instance_role_* in $f"
+  grep -q 'dependency "jump_hosts"' "$f" \
+    && fail "log-transfer must not depend on jump-hosts in $f"
 done < <(find "$root/examples/live" -path '*/log-transfer/terragrunt.hcl' -print0)
 
 # Orchestrate without --users-vars uses users: [] in Ansible. The stack must not
@@ -38,18 +39,28 @@ grep -A8 'data "aws_ssm_parameter" "al2023_ami_x86_64"' "$jh" | grep -q 'hosts_u
   || fail "default AMI lookup must be gated on hosts that do not supply ami_id or ami_ssm_parameter_name"
 
 lt="$root/modules/terraform/log_transfer/main.tf"
-grep -A8 'instance_upload_object_actions' "$lt" | grep -q 's3:GetObject' \
-  || fail "instance role must grant s3:GetObject so operators can pull archives onto the jump host"
-grep -A8 'instance_upload_bucket_actions' "$lt" | grep -q '"s3:ListBucket"' \
-  || fail "instance role must grant s3:ListBucket so operators can list archives on the jump host"
+grep -q 'instance_role' "$lt" \
+  && fail "log_transfer must not grant the jump-host instance role any S3 access"
+grep -q 'aws_iam_role_policy' "$lt" \
+  && fail "log_transfer must not attach an inline policy to the jump-host instance role"
+grep -A20 'downloader_role_arns' "$lt" | grep -q 's3:PutObject' \
+  || fail "operator role ARNs must be allowed to upload (s3:PutObject) via the bucket policy"
 grep -A12 'variable "retention_days"' "$root/modules/terraform/log_transfer/variables.tf" | grep -q 'var.retention_days <= 730' \
   || fail "log_transfer retention_days must be capped at 730 so ARCHIVE_ACCESS cannot outlive expiration"
+
+helper="$root/ansible/roles/session_comfort/files/log-transfer"
+grep -q 'env -u AWS_PROFILE' "$helper" \
+  && fail "log-transfer helper must keep the operator AWS_PROFILE"
+grep -q 'AWS_EC2_METADATA_DISABLED=true' "$helper" \
+  || fail "log-transfer helper must disable IMDS so the instance role cannot be used"
 
 docs="$root/docs/consumer-guide.md"
 mod_readme="$root/modules/terraform/log_transfer/README.md"
 grep -q 'pull an archive back onto the jump host' "$docs" \
-  || fail "consumer-guide must document instance-role list/get for host-side download"
+  && fail "consumer-guide must not document instance-role host-side download"
+grep -q 'operator credentials' "$docs" \
+  || fail "consumer-guide must document that log-transfer uses operator credentials"
 grep -q 'pull an archive back onto the jump host' "$mod_readme" \
-  || fail "log_transfer README must document instance-role list/get for host-side download"
+  && fail "log_transfer README must not document instance-role host-side download"
 
 echo "log-transfer contract OK"

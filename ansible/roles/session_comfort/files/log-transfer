@@ -77,17 +77,31 @@ first_entry="$(zipinfo -1 "$zip_path" | head -n 1 || true)"
 set -o pipefail
 [[ -n "${first_entry:-}" ]] || die "Zip archive is empty."
 
-cat >"$aws_config" <<'EOF'
-[default]
-s3 =
-    multipart_threshold = 16MB
-    multipart_chunksize = 64MB
-    max_concurrent_requests = 4
-EOF
+orig_config="${AWS_CONFIG_FILE:-${HOME}/.aws/config}"
+if [[ -r "$orig_config" ]]; then
+  cat "$orig_config" >"$aws_config"
+else
+  : >"$aws_config"
+fi
+if [[ -n "${AWS_PROFILE:-}" && "${AWS_PROFILE}" != default ]]; then
+  s3_section="profile ${AWS_PROFILE}"
+else
+  s3_section="default"
+fi
+s3_block=$'s3 =\n    multipart_threshold = 16MB\n    multipart_chunksize = 64MB\n    max_concurrent_requests = 4'
+if grep -Fq "[${s3_section}]" "$aws_config"; then
+  awk -v sec="[${s3_section}]" -v block="$s3_block" '
+    $0 == sec && !done { print; print block; done = 1; next }
+    { print }
+  ' "$aws_config" >"${aws_config}.new" && mv "${aws_config}.new" "$aws_config"
+else
+  printf '\n[%s]\n%s\n' "$s3_section" "$s3_block" >>"$aws_config"
+fi
 
-env -u AWS_PROFILE -u AWS_DEFAULT_PROFILE \
-  -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
-  AWS_SHARED_CREDENTIALS_FILE=/dev/null \
+env -u AWS_WEB_IDENTITY_TOKEN_FILE -u AWS_ROLE_ARN -u AWS_ROLE_SESSION_NAME \
+  -u AWS_CONTAINER_CREDENTIALS_RELATIVE_URI -u AWS_CONTAINER_CREDENTIALS_FULL_URI \
+  -u AWS_CONTAINER_AUTHORIZATION_TOKEN -u AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE \
+  AWS_EC2_METADATA_DISABLED=true \
   AWS_CONFIG_FILE="$aws_config" \
   aws s3 cp "$zip_path" "s3://${bucket}/${key}" \
     --region "$region" \

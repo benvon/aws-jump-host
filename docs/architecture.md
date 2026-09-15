@@ -28,7 +28,7 @@ The resulting platform provisions private jump hosts reachable through AWS Sessi
 - `modules/terraform/observability`: CloudWatch log group and optional KMS key; optional metric filter and alarm hooks (disabled by default) for future SNS paging.
 - `modules/terraform/ssm_session_manager_settings`: Session Manager account-level preferences via `SSM-SessionManagerRunShell`.
 - `modules/terraform/remote_state_s3`: encrypted versioned S3 state bucket.
-- `modules/terraform/log_transfer`: private per-environment bucket for operator log archives; instance-role upload and console download via `users[].iam_role_arns`.
+- `modules/terraform/log_transfer`: private per-environment bucket for operator log archives; upload and console download via operator `users[].iam_role_arns` (not the instance role).
 
 ### Terragrunt
 

@@ -10,22 +10,18 @@ terraform {
 }
 
 data "aws_region" "current" {}
-data "aws_caller_identity" "current" {}
 
 locals {
-  downloader_role_arns = distinct(compact(var.downloader_role_arns))
+  operator_role_arns = distinct(compact(var.downloader_role_arns))
 
-  # GetObject and ListBucket are intentional: operators may pull archives back
-  # onto the shared jump host with instance-role credentials. Console download
-  # still uses downloader_role_arns after SSO. Every local user shares this role.
-  instance_upload_object_actions = [
+  operator_object_actions = [
     "s3:PutObject",
     "s3:GetObject",
     "s3:AbortMultipartUpload",
     "s3:ListMultipartUploadParts",
   ]
 
-  instance_upload_bucket_actions = [
+  operator_bucket_actions = [
     "s3:ListBucket",
     "s3:GetBucketLocation",
     "s3:ListBucketMultipartUploads",
@@ -127,46 +123,18 @@ data "aws_iam_policy_document" "bucket" {
     }
   }
 
-  statement {
-    sid    = "AllowInstanceUploadObjects"
-    effect = "Allow"
-
-    actions = local.instance_upload_object_actions
-
-    principals {
-      type        = "AWS"
-      identifiers = [var.instance_role_arn]
-    }
-
-    resources = ["${aws_s3_bucket.this.arn}/*"]
-  }
-
-  statement {
-    sid    = "AllowInstanceUploadBucket"
-    effect = "Allow"
-
-    actions = local.instance_upload_bucket_actions
-
-    principals {
-      type        = "AWS"
-      identifiers = [var.instance_role_arn]
-    }
-
-    resources = [aws_s3_bucket.this.arn]
-  }
-
   dynamic "statement" {
-    for_each = length(local.downloader_role_arns) > 0 ? [1] : []
+    for_each = length(local.operator_role_arns) > 0 ? [1] : []
 
     content {
-      sid    = "AllowDownloaderGetObject"
+      sid    = "AllowOperatorObjects"
       effect = "Allow"
 
-      actions = ["s3:GetObject"]
+      actions = local.operator_object_actions
 
       principals {
         type        = "AWS"
-        identifiers = local.downloader_role_arns
+        identifiers = local.operator_role_arns
       }
 
       resources = ["${aws_s3_bucket.this.arn}/*"]
@@ -174,20 +142,17 @@ data "aws_iam_policy_document" "bucket" {
   }
 
   dynamic "statement" {
-    for_each = length(local.downloader_role_arns) > 0 ? [1] : []
+    for_each = length(local.operator_role_arns) > 0 ? [1] : []
 
     content {
-      sid    = "AllowDownloaderBucketDiscovery"
+      sid    = "AllowOperatorBucket"
       effect = "Allow"
 
-      actions = [
-        "s3:ListBucket",
-        "s3:GetBucketLocation",
-      ]
+      actions = local.operator_bucket_actions
 
       principals {
         type        = "AWS"
-        identifiers = local.downloader_role_arns
+        identifiers = local.operator_role_arns
       }
 
       resources = [aws_s3_bucket.this.arn]
@@ -198,27 +163,4 @@ data "aws_iam_policy_document" "bucket" {
 resource "aws_s3_bucket_policy" "this" {
   bucket = aws_s3_bucket.this.id
   policy = data.aws_iam_policy_document.bucket.json
-}
-
-data "aws_iam_policy_document" "instance_upload" {
-  statement {
-    sid    = "AllowLogTransferUpload"
-    effect = "Allow"
-
-    actions = concat(
-      local.instance_upload_object_actions,
-      local.instance_upload_bucket_actions,
-    )
-
-    resources = [
-      aws_s3_bucket.this.arn,
-      "${aws_s3_bucket.this.arn}/*",
-    ]
-  }
-}
-
-resource "aws_iam_role_policy" "upload" {
-  name   = "log-transfer-upload"
-  role   = var.instance_role_name
-  policy = data.aws_iam_policy_document.instance_upload.json
 }

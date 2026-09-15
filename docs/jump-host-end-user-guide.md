@@ -101,7 +101,7 @@ Package local files or directories and upload them for browser download via the 
 log-transfer /path/to/file.log ./coredump.dir
 ```
 
-The command prints an S3 console URL. Open it, sign in with SSO if prompted, and download the object. You need an IAM role listed in this environment’s `users.yaml` `iam_role_arns`. On the jump host itself you can also list or copy objects with the instance role (the helper unsets `AWS_PROFILE` so `aws s3 cp` / `aws s3 ls` use instance credentials). Archives expire after two years. You need free space on `/home` roughly equal to the zip size while it is being built.
+The command prints an S3 console URL. Open it, sign in with SSO if prompted, and download the object. You need an IAM role listed in this environment’s `users.yaml` `iam_role_arns`. `log-transfer` uses those same operator credentials (`AWS_PROFILE` from `awslogin` / login env, or keys you export). It does not use the EC2 instance role. Archives expire after two years. You need free space on `/home` roughly equal to the zip size while it is being built.
 
 ### Choosing the Linux (OS) user for the session
 
