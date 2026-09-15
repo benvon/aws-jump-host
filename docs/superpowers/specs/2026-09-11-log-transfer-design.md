@@ -101,8 +101,8 @@ Behavior:
 3. Create a zip under a uniquely created directory in `$HOME/.cache/log-transfer` (persistent home volume, not root disk; `mktemp -d` so a reused PID cannot reopen a leftover archive). Include the given files/directories; rewrite a path that is exactly `-` to `./-` so Info-ZIP archives that filesystem name instead of stdin. Fail if the zip is empty.
 4. Object key: `<linux-user>/<UTC timestamp YYYYMMDDTHHMMSSZ>-<hostname>-<4-char suffix>.zip`.
 5. Upload with `aws s3 cp` using:
-   - **Operator credentials** — keep `AWS_PROFILE` / `AWS_DEFAULT_PROFILE` / access keys from the session (`jump_host_login_env` SSO). Disable IMDS (`AWS_EC2_METADATA_DISABLED=true`) so the instance role cannot be used. Unset leftover web-identity and container credential variables so they cannot override the operator profile.
-   - A process-local `AWS_CONFIG_FILE` that copies the operator’s AWS config (so SSO profiles still resolve), replaces any existing nested `s3 =` block on the active profile, and sets `s3.multipart_threshold = 16MB` and `s3.multipart_chunksize = 64MB` (and a modest `max_concurrent_requests`) so large archives use multipart, not a single `PutObject`
+   - **Operator credentials** — keep `AWS_PROFILE` / `AWS_DEFAULT_PROFILE` / access keys from the session (`jump_host_login_env` SSO). Profile selection is `AWS_PROFILE`, then `AWS_DEFAULT_PROFILE`, then `default`. Disable IMDS (`AWS_EC2_METADATA_DISABLED=true`) so the instance role cannot be used. Unset leftover web-identity and container credential variables so they cannot override the operator profile.
+   - S3 transfer settings are applied separately onto that profile in a process-local `AWS_CONFIG_FILE` (SSO keys are preserved). The helper inherits any existing nested `s3 =` values from the selected profile, then overrides `multipart_threshold = 16MB`, `multipart_chunksize = 64MB`, and `max_concurrent_requests = 4`. It prints one compact `log-transfer s3: ...` line on stderr with the effective settings.
 6. On success, delete the local zip and print one S3 console object URL, then exit 0:
 
    `https://s3.console.aws.amazon.com/s3/object/<bucket>?region=<region>&prefix=<key>`

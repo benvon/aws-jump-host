@@ -84,18 +84,65 @@ if [[ -r "$orig_config" ]]; then
 else
   : >"$aws_config"
 fi
-if [[ -n "${AWS_PROFILE:-}" && "${AWS_PROFILE}" != default ]]; then
-  s3_section="profile ${AWS_PROFILE}"
+
+if [[ -n "${AWS_PROFILE:-}" ]]; then
+  active_profile="$AWS_PROFILE"
+elif [[ -n "${AWS_DEFAULT_PROFILE:-}" ]]; then
+  active_profile="$AWS_DEFAULT_PROFILE"
 else
-  s3_section="default"
+  active_profile="default"
 fi
+require_safe "AWS profile name" "$active_profile" '^[A-Za-z0-9._-]+$'
+if [[ "$active_profile" == default ]]; then
+  s3_section="default"
+else
+  s3_section="profile ${active_profile}"
+fi
+
+inherited_s3="${work_dir}/s3-inherited"
+awk -v sec="[${s3_section}]" '
+  $0 == sec { in_target = 1; next }
+  $0 ~ /^\[/ { in_target = 0; skip = 0; next }
+  in_target && $0 ~ /^[[:space:]]*s3[[:space:]]*=/ { skip = 1; next }
+  skip {
+    if ($0 ~ /^[[:space:]]+/ && $0 ~ /=/) {
+      line = $0
+      sub(/^[[:space:]]+/, "", line)
+      print line
+      next
+    }
+    if ($0 ~ /^[[:space:]]*$/) next
+    skip = 0
+  }
+' "$aws_config" >"$inherited_s3" || true
+
 s3_block_file="${work_dir}/s3-block"
-cat >"$s3_block_file" <<'EOF'
-s3 =
-    multipart_threshold = 16MB
-    multipart_chunksize = 64MB
-    max_concurrent_requests = 4
-EOF
+{
+  printf 's3 =\n'
+  printf '    multipart_threshold = 16MB\n'
+  printf '    multipart_chunksize = 64MB\n'
+  printf '    max_concurrent_requests = 4\n'
+} >"$s3_block_file"
+
+s3_summary="multipart_threshold=16MB multipart_chunksize=64MB max_concurrent_requests=4"
+if [[ -s "$inherited_s3" ]]; then
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    key="${line%%=*}"
+    value="${line#*=}"
+    key="${key%"${key##*[![:space:]]}"}"
+    key="${key#"${key%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    case "$key" in
+      multipart_threshold|multipart_chunksize|max_concurrent_requests) continue ;;
+    esac
+    [[ "$key" =~ ^[a-z0-9_]+$ ]] || continue
+    [[ "$value" =~ ^[A-Za-z0-9._,/%-]+$ ]] || continue
+    printf '    %s = %s\n' "$key" "$value" >>"$s3_block_file"
+    s3_summary="${s3_summary} ${key}=${value}"
+  done <"$inherited_s3"
+fi
+echo "log-transfer s3: ${s3_summary}" >&2
 awk -v sec="[${s3_section}]" -v blockfile="$s3_block_file" '
   BEGIN {
     while ((getline line < blockfile) > 0) {

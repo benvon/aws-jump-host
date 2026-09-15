@@ -103,7 +103,7 @@ Package local files or directories and upload them for browser download via the 
 log-transfer /path/to/file.log ./coredump.dir
 ```
 
-The command prints an S3 console URL. Open it, sign in with SSO if prompted, and download the object. You need an IAM role listed in this environment’s `users.yaml` `iam_role_arns` (that role is allowed to upload and to download). `log-transfer` uses your operator credentials (`AWS_PROFILE` from `awslogin` / login env, or keys you export). It disables the instance metadata service for that upload so the EC2 instance role cannot be used. If you have not logged in, or your role is not in the bucket policy, the upload fails. Archives expire after two years. You need free space on `/home` roughly equal to the zip size while it is being built.
+The command prints a short `log-transfer s3:` line with the transfer settings it will use, then an S3 console URL. Open the URL, sign in with SSO if prompted, and download the object. You need an IAM role listed in this environment’s `users.yaml` `iam_role_arns` (that role is allowed to upload and to download). `log-transfer` uses your operator credentials (`AWS_PROFILE` from `awslogin` / login env, or keys you export). It disables the instance metadata service for that upload so the EC2 instance role cannot be used. If you have not logged in, or your role is not in the bucket policy, the upload fails. Archives expire after two years. You need free space on `/home` roughly equal to the zip size while it is being built.
 
 ### Choosing the Linux (OS) user for the session
 

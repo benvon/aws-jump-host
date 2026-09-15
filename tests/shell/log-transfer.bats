@@ -214,6 +214,66 @@ assert "sso_start_url = https://example.awsapps.com/start" in rest
 ' "$AWS_LOG"
 }
 
+@test "log-transfer applies S3 settings to AWS_DEFAULT_PROFILE when AWS_PROFILE is unset" {
+  unset AWS_PROFILE
+  export AWS_DEFAULT_PROFILE=operator-sso
+  mkdir -p "$HOME_DIR/.aws"
+  cat >"$HOME_DIR/.aws/config" <<'EOF'
+[default]
+s3 =
+    multipart_threshold = 8MB
+[profile operator-sso]
+sso_start_url = https://example.awsapps.com/start
+region = us-west-2
+EOF
+  run "$LOG_TRANSFER" "$SRC_DIR/app.log"
+  echo "status=$status output=$output aws=$(cat "$AWS_LOG")"
+  [[ "$status" -eq 0 ]]
+  grep -q 'PROFILE=<unset>' "$AWS_LOG"
+  grep -q 'DEFAULT_PROFILE=operator-sso' "$AWS_LOG"
+  python3 -c '
+import pathlib, sys
+text = pathlib.Path(sys.argv[1]).read_text()
+cfg = text[text.index("CONFIG_BEGIN"):text.index("CONFIG_END")]
+default = cfg.split("[default]", 1)[1].split("[", 1)[0]
+named = cfg.split("[profile operator-sso]", 1)[1].split("[", 1)[0]
+assert "multipart_threshold = 8MB" in default
+assert "multipart_threshold = 16MB" in named
+assert named.count("s3 =") == 1
+' "$AWS_LOG"
+}
+
+@test "log-transfer inherits profile S3 settings and prints the effective transfer config" {
+  mkdir -p "$HOME_DIR/.aws"
+  cat >"$HOME_DIR/.aws/config" <<'EOF'
+[profile operator-sso]
+sso_start_url = https://example.awsapps.com/start
+s3 =
+    max_concurrent_requests = 20
+    multipart_threshold = 8MB
+    max_bandwidth = 10MB/s
+EOF
+  run "$LOG_TRANSFER" "$SRC_DIR/app.log"
+  echo "status=$status output=$output aws=$(cat "$AWS_LOG")"
+  [[ "$status" -eq 0 ]]
+  python3 -c '
+import pathlib, sys
+text = pathlib.Path(sys.argv[1]).read_text()
+cfg = text[text.index("CONFIG_BEGIN"):text.index("CONFIG_END")]
+named = cfg.split("[profile operator-sso]", 1)[1].split("[", 1)[0]
+assert named.count("s3 =") == 1
+assert "multipart_threshold = 16MB" in named
+assert "multipart_chunksize = 64MB" in named
+assert "max_concurrent_requests = 4" in named
+assert "max_bandwidth = 10MB/s" in named
+' "$AWS_LOG"
+  [[ "$output" == *"multipart_threshold=16MB"* ]]
+  [[ "$output" == *"multipart_chunksize=64MB"* ]]
+  [[ "$output" == *"max_concurrent_requests=4"* ]]
+  [[ "$output" == *"max_bandwidth=10MB/s"* ]]
+  [[ "$output" != *"sso_start_url"* ]]
+}
+
 @test "log-transfer accepts large zip listings without SIGPIPE" {
   cat >"$FAKE_BIN/zipinfo" <<'EOF'
 #!/usr/bin/env bash
