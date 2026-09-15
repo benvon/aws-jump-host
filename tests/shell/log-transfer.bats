@@ -55,8 +55,23 @@ setup() {
 if [[ "${FAKE_AWS_FAIL:-}" == "1" ]]; then
   exit 1
 fi
+if [[ "${1:-}" == configure && "${2:-}" == get ]]; then
+  shift 2
+  name=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --profile) shift 2 ;;
+      *) name="$1"; shift ;;
+    esac
+  done
+  if [[ "$name" == s3.max_bandwidth && -n "${FAKE_S3_MAX_BANDWIDTH:-}" ]]; then
+    printf '%s\n' "$FAKE_S3_MAX_BANDWIDTH"
+    exit 0
+  fi
+  exit 1
+fi
 if [[ -n "${AWS_CONFIG_FILE:-}" && -f "${AWS_CONFIG_FILE}" ]]; then
-  if awk '
+  awk '
     /^\[/ { sec=$0; next }
     /^[[:space:]]*s3[[:space:]]*=/ {
       if (seen[sec]++) {
@@ -64,11 +79,7 @@ if [[ -n "${AWS_CONFIG_FILE:-}" && -f "${AWS_CONFIG_FILE}" ]]; then
         exit 1
       }
     }
-  ' "${AWS_CONFIG_FILE}"; then
-    :
-  else
-    exit 1
-  fi
+  ' "${AWS_CONFIG_FILE}" || exit 1
 fi
 exit 0
 EOF
@@ -138,6 +149,22 @@ teardown() {
   rm -rf "${FAKE_BIN:-}" "${HOME_DIR:-}" "${SRC_DIR:-}" "${AWS_LOG:-}" "${ZIP_LOG:-}" "${ZIP_MEMBERS_LOG:-}"
 }
 
+# Process-local AWS_CONFIG_FILE dumped by the fake aws during `s3 cp`.
+generated_config() {
+  awk '/^CONFIG_BEGIN$/,/^CONFIG_END$/' "$AWS_LOG"
+}
+
+generated_config_has() {
+  if generated_config | grep -qF "$1"; then
+    return 0
+  fi
+  return 1
+}
+
+count_in_generated() {
+  generated_config | grep -cF "$1" || true
+}
+
 @test "log-transfer fails with no paths" {
   run "$LOG_TRANSFER"
   [[ "$status" -ne 0 ]]
@@ -183,7 +210,43 @@ teardown() {
   ! find "$HOME_DIR/.cache/log-transfer" -name '*.zip' 2>/dev/null | grep -q .
 }
 
-@test "log-transfer replaces an existing profile s3 block instead of duplicating it" {
+@test "log-transfer constructs S3 settings without copying the operator AWS config" {
+  mkdir -p "$HOME_DIR/.aws"
+  cat >"$HOME_DIR/.aws/config" <<'EOF'
+[profile operator-sso]
+sso_start_url = https://example.awsapps.com/start
+sso_region = us-west-2
+s3 =
+    max_bandwidth = 10MB/s
+region = us-west-2
+EOF
+  cp "$HOME_DIR/.aws/config" "$HOME_DIR/.aws/config.orig"
+  export FAKE_S3_MAX_BANDWIDTH=10MB/s
+  run "$LOG_TRANSFER" "$SRC_DIR/app.log"
+  echo "status=$status output=$output aws=$(cat "$AWS_LOG")"
+  [[ "$status" -eq 0 ]]
+  cmp -s "$HOME_DIR/.aws/config" "$HOME_DIR/.aws/config.orig"
+  ! grep -q 'sso_start_url' "$AWS_LOG"
+  grep -q 'credential_process' "$AWS_LOG"
+  grep -q 'PROFILE=operator-sso' "$AWS_LOG"
+  grep -q 'multipart_threshold = 16MB' "$AWS_LOG"
+  grep -q 'max_bandwidth = 10MB/s' "$AWS_LOG"
+  [[ "$output" == *"max_bandwidth=10MB/s"* ]]
+  grep -qE 's3://jh-log-test/[a-z0-9_]+/[0-9]{8}T[0-9]{6}Z-.+\.zip' "$AWS_LOG"
+}
+
+@test "log-transfer uploads when the operator AWS config uses CRLF" {
+  mkdir -p "$HOME_DIR/.aws"
+  printf '[profile operator-sso]\r\nsso_start_url = https://example.awsapps.com/start\r\ns3 =\r\n    max_bandwidth = 10MB/s\r\n' >"$HOME_DIR/.aws/config"
+  run "$LOG_TRANSFER" "$SRC_DIR/app.log"
+  echo "status=$status output=$output aws=$(cat "$AWS_LOG")"
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == *".zip"* ]]
+  grep -qE 's3://jh-log-test/.+\.zip' "$AWS_LOG"
+  ! grep -q 'sso_start_url' "$AWS_LOG"
+}
+
+@test "log-transfer writes one s3 block and does not copy operator profile keys" {
   mkdir -p "$HOME_DIR/.aws"
   cat >"$HOME_DIR/.aws/config" <<'EOF'
 [profile operator-sso]
@@ -194,24 +257,19 @@ s3 =
     multipart_threshold = 8MB
 region = us-west-2
 EOF
+  cp "$HOME_DIR/.aws/config" "$HOME_DIR/.aws/config.orig"
   run "$LOG_TRANSFER" "$SRC_DIR/app.log"
   echo "status=$status output=$output aws=$(cat "$AWS_LOG")"
   [[ "$status" -eq 0 ]]
   [[ "$output" == *"s3.console.aws.amazon.com"* ]]
+  cmp -s "$HOME_DIR/.aws/config" "$HOME_DIR/.aws/config.orig"
   grep -q 'PROFILE=operator-sso' "$AWS_LOG"
-  grep -q 'sso_start_url = https://example.awsapps.com/start' "$AWS_LOG"
+  ! grep -q 'sso_start_url' "$AWS_LOG"
+  grep -q 'credential_process' "$AWS_LOG"
   grep -q 'multipart_threshold = 16MB' "$AWS_LOG"
-  python3 -c '
-import pathlib, sys
-text = pathlib.Path(sys.argv[1]).read_text()
-start = text.index("CONFIG_BEGIN")
-end = text.index("CONFIG_END")
-cfg = text[start:end]
-sec = cfg.split("[profile operator-sso]", 1)[1]
-rest = sec.split("[", 1)[0]
-assert rest.count("s3 =") == 1, rest
-assert "sso_start_url = https://example.awsapps.com/start" in rest
-' "$AWS_LOG"
+  ! grep -q 'multipart_threshold = 8MB' "$AWS_LOG"
+  [[ "$(count_in_generated '[profile operator-sso]')" -eq 1 ]]
+  [[ "$(count_in_generated 's3 =')" -eq 1 ]]
 }
 
 @test "log-transfer applies S3 settings to AWS_DEFAULT_PROFILE when AWS_PROFILE is unset" {
@@ -231,16 +289,11 @@ EOF
   [[ "$status" -eq 0 ]]
   grep -q 'PROFILE=<unset>' "$AWS_LOG"
   grep -q 'DEFAULT_PROFILE=operator-sso' "$AWS_LOG"
-  python3 -c '
-import pathlib, sys
-text = pathlib.Path(sys.argv[1]).read_text()
-cfg = text[text.index("CONFIG_BEGIN"):text.index("CONFIG_END")]
-default = cfg.split("[default]", 1)[1].split("[", 1)[0]
-named = cfg.split("[profile operator-sso]", 1)[1].split("[", 1)[0]
-assert "multipart_threshold = 8MB" in default
-assert "multipart_threshold = 16MB" in named
-assert named.count("s3 =") == 1
-' "$AWS_LOG"
+  ! generated_config_has '[default]'
+  generated_config_has '[profile operator-sso]'
+  generated_config_has 'multipart_threshold = 16MB'
+  ! generated_config_has 'sso_start_url'
+  [[ "$(count_in_generated 's3 =')" -eq 1 ]]
 }
 
 @test "log-transfer inherits profile S3 settings and prints the effective transfer config" {
@@ -253,20 +306,16 @@ s3 =
     multipart_threshold = 8MB
     max_bandwidth = 10MB/s
 EOF
+  export FAKE_S3_MAX_BANDWIDTH=10MB/s
   run "$LOG_TRANSFER" "$SRC_DIR/app.log"
   echo "status=$status output=$output aws=$(cat "$AWS_LOG")"
   [[ "$status" -eq 0 ]]
-  python3 -c '
-import pathlib, sys
-text = pathlib.Path(sys.argv[1]).read_text()
-cfg = text[text.index("CONFIG_BEGIN"):text.index("CONFIG_END")]
-named = cfg.split("[profile operator-sso]", 1)[1].split("[", 1)[0]
-assert named.count("s3 =") == 1
-assert "multipart_threshold = 16MB" in named
-assert "multipart_chunksize = 64MB" in named
-assert "max_concurrent_requests = 4" in named
-assert "max_bandwidth = 10MB/s" in named
-' "$AWS_LOG"
+  [[ "$(count_in_generated 's3 =')" -eq 1 ]]
+  generated_config_has 'multipart_threshold = 16MB'
+  generated_config_has 'multipart_chunksize = 64MB'
+  generated_config_has 'max_concurrent_requests = 4'
+  generated_config_has 'max_bandwidth = 10MB/s'
+  ! generated_config_has 'sso_start_url'
   [[ "$output" == *"multipart_threshold=16MB"* ]]
   [[ "$output" == *"multipart_chunksize=64MB"* ]]
   [[ "$output" == *"max_concurrent_requests=4"* ]]
@@ -283,6 +332,7 @@ s3 =
     multipart_threshold = 8MB
     max_bandwidth = 10MB/s
 EOF
+  export FAKE_S3_MAX_BANDWIDTH=10MB/s
   run "$LOG_TRANSFER" "$SRC_DIR/app.log"
   echo "status=$status output=$output aws=$(cat "$AWS_LOG")"
   [[ "$status" -eq 0 ]]

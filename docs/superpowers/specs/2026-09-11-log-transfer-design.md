@@ -102,7 +102,7 @@ Behavior:
 4. Object key: `<linux-user>/<UTC timestamp YYYYMMDDTHHMMSSZ>-<hostname>-<4-char suffix>.zip`.
 5. Upload with `aws s3 cp` using:
    - **Operator credentials** — keep `AWS_PROFILE` / `AWS_DEFAULT_PROFILE` / access keys from the session (`jump_host_login_env` SSO). Profile selection is `AWS_PROFILE`, then `AWS_DEFAULT_PROFILE`, then `default`. Disable IMDS (`AWS_EC2_METADATA_DISABLED=true`) so the instance role cannot be used. Unset leftover web-identity and container credential variables so they cannot override the operator profile.
-   - S3 transfer settings are applied separately onto that profile in a process-local `AWS_CONFIG_FILE` (SSO keys are preserved). The helper inherits any existing nested `s3 =` values from the selected profile, then overrides `multipart_threshold = 16MB`, `multipart_chunksize = 64MB`, and `max_concurrent_requests = 4`. It prints one compact `log-transfer s3: ...` line on stderr with the effective settings.
+   - S3 transfer settings are not available as AWS CLI flags or environment variables. The helper constructs a process-local `AWS_CONFIG_FILE` with only the active profile, a `credential_process` that reuses the operator profile, and the tool S3 settings. It does not copy or rewrite `~/.aws/config`. Remaining nested `s3` keys such as `max_bandwidth` are read with `aws configure get` (so CRLF operator configs stay the CLI’s problem). Tool settings are `multipart_threshold = 16MB`, `multipart_chunksize = 64MB`, and `max_concurrent_requests = 4`. It prints one compact `log-transfer s3: ...` line on stderr with the effective settings.
 6. On success, delete the local zip and print one S3 console object URL, then exit 0:
 
    `https://s3.console.aws.amazon.com/s3/object/<bucket>?region=<region>&prefix=<key>`
