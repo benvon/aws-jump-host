@@ -21,3 +21,13 @@ output "instance_profile_arn" {
   description = "IAM instance profile arn attached to all jump hosts."
   value       = aws_iam_instance_profile.instance.arn
 }
+
+output "instance_role_arn" {
+  description = "IAM role ARN assumed by jump host EC2 instances (SSM-only; operators bring their own credentials for environment APIs)."
+  value       = aws_iam_role.instance.arn
+}
+
+output "instance_role_name" {
+  description = "IAM role name assumed by jump host EC2 instances (SSM-only)."
+  value       = aws_iam_role.instance.name
+}

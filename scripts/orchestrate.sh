@@ -32,6 +32,14 @@ require_cmd() {
   fi
 }
 
+# Canonical users.yaml policy (schema, Linux names, downloader ARNs). Terragrunt
+# and Ansible call the same helper; this wrapper is the fast-fail before stacks.
+validate_users_vars_file() {
+  local file="$1"
+  require_cmd python3
+  "${REPO_ROOT}/scripts/validate_users_vars.py" "$file"
+}
+
 stack_label() {
   local stack_dir="$1"
   if [[ "$stack_dir" == "${REPO_ROOT}/"* ]]; then
@@ -158,11 +166,12 @@ region_dir="$live_dir/$env_name/$subenv_name/$aws_region"
 observability_dir="$region_dir/observability"
 endpoints_dir="$region_dir/vpc-endpoints"
 jump_hosts_dir="$region_dir/jump-hosts"
+log_transfer_dir="$region_dir/log-transfer"
 ssm_self_management_dir="$region_dir/ssm-self-management"
 inventory_path="${REPO_ROOT}/ansible/inventory/generated-${env_name}-${subenv_name}-${aws_region}.yml"
 expected_log_group="/aws/ssm/jump-host/${env_name}/${subenv_name}/${aws_region}"
 
-required_dirs=("$region_dir" "$observability_dir" "$endpoints_dir" "$jump_hosts_dir")
+required_dirs=("$region_dir" "$observability_dir" "$endpoints_dir" "$jump_hosts_dir" "$log_transfer_dir")
 if [[ "$ssm_self_management" == "true" ]]; then
   required_dirs+=("$ssm_self_management_dir")
 fi
@@ -173,6 +182,27 @@ for dir in "${required_dirs[@]}"; do
     exit 1
   fi
 done
+
+# Always mark orchestration so log-transfer Terragrunt does not independently
+# fall back to ancestor ansible/users.yaml or a leftover JUMP_HOST_USERS_VARS.
+# Ansible only loads a users file when --users-vars is set; keep download grants
+# on that same source (empty means users: []).
+# Point Terragrunt at this checkout's validator; --live-dir may be another repo.
+export JUMP_HOST_ORCHESTRATE=1
+export JUMP_HOST_USERS_VALIDATOR="${REPO_ROOT}/scripts/validate_users_vars.py"
+if [[ -n "$users_vars" ]]; then
+  if [[ "$users_vars" != /* ]]; then
+    users_vars="$(cd "$(dirname -- "$users_vars")" && pwd)/$(basename -- "$users_vars")"
+  fi
+  if [[ ! -f "$users_vars" ]]; then
+    echo "Error: users vars file not found: $users_vars" >&2
+    exit 1
+  fi
+  validate_users_vars_file "$users_vars"
+  export JUMP_HOST_USERS_VARS="$users_vars"
+else
+  export JUMP_HOST_USERS_VARS=""
+fi
 
 require_cmd terragrunt
 mkdir -p "$TG_DOWNLOAD_DIR"
@@ -267,6 +297,34 @@ resolve_ssm_transfer_bucket() {
   echo "$bucket"
 }
 
+resolve_log_transfer_outputs() {
+  local bucket region
+  if ! bucket="$(terragrunt --working-dir "$log_transfer_dir" output -raw bucket_name)"; then
+    echo "Error: could not read log-transfer output bucket_name from ${log_transfer_dir}." >&2
+    return 1
+  fi
+  if ! region="$(terragrunt --working-dir "$log_transfer_dir" output -raw region)"; then
+    echo "Error: could not read log-transfer output region from ${log_transfer_dir}." >&2
+    return 1
+  fi
+  bucket="$(printf '%s' "$bucket" | tr -d '\n\r')"
+  region="$(printf '%s' "$region" | tr -d '\n\r')"
+  if [[ -z "$bucket" || -z "$region" ]]; then
+    echo "Error: log-transfer outputs bucket_name/region are empty in ${log_transfer_dir}." >&2
+    return 1
+  fi
+  # Same charset the helper interpolates into aws CLI / console URLs.
+  if [[ ! "$bucket" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ]]; then
+    echo "Error: log-transfer output bucket_name is not a safe S3 bucket name." >&2
+    return 1
+  fi
+  if [[ ! "$region" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+    echo "Error: log-transfer output region is not a safe AWS region id." >&2
+    return 1
+  fi
+  printf '%s\t%s\n' "$bucket" "$region"
+}
+
 check_ssm_transfer_bucket_access() {
   local bucket="$1"
   if ! command -v aws >/dev/null 2>&1; then
@@ -349,6 +407,20 @@ run_ansible() {
     extra+=(--extra-vars "@$users_vars")
   fi
 
+  local log_xfer
+  if [[ "$playbook" == "jump_hosts.yml" ]]; then
+    if log_xfer="$(resolve_log_transfer_outputs)"; then
+      extra+=(--extra-vars "jump_host_log_transfer_bucket=${log_xfer%%$'\t'*}")
+      extra+=(--extra-vars "jump_host_log_transfer_region=${log_xfer#*$'\t'}")
+    elif [[ "$check_mode" == "true" ]]; then
+      printf "\n==> [ansible/%s] WARNING: log-transfer outputs unavailable; leaving /etc/jump-host-log-transfer-* unchanged.\n" "$playbook" >&2
+      extra+=(--extra-vars "jump_host_log_transfer_skip=true")
+    else
+      echo "Error: could not read log-transfer Terragrunt outputs; refusing to overwrite /etc/jump-host-log-transfer-*." >&2
+      exit 1
+    fi
+  fi
+
   if [[ -n "$env_name" ]]; then
     extra+=(--extra-vars "jump_host_environment=${env_name}")
   fi
@@ -376,6 +448,7 @@ case "$command_name" in
     fi
     run_tg "$endpoints_dir" init
     run_tg "$jump_hosts_dir" init
+    run_tg "$log_transfer_dir" init
     ;;
 
   check)
@@ -409,6 +482,7 @@ case "$command_name" in
     run_tg "$observability_dir" plan
     run_tg "$endpoints_dir" plan
     run_tg "$jump_hosts_dir" plan
+    run_tg "$log_transfer_dir" plan
 
     run_ansible "jump_hosts.yml" "true"
     ;;
@@ -419,6 +493,7 @@ case "$command_name" in
     run_tg_apply "$observability_dir"
     run_tg_apply "$endpoints_dir"
     run_tg_apply "$jump_hosts_dir"
+    run_tg_apply "$log_transfer_dir"
 
     run_ansible "jump_hosts.yml"
     ;;
@@ -426,6 +501,8 @@ case "$command_name" in
   configure)
     ensure_target_account_identity
     run_preflight
+    # Keep downloader IAM in sync with users.yaml on the documented user add/remove path.
+    run_tg_apply "$log_transfer_dir"
     run_ansible "jump_hosts.yml"
     ;;
 
@@ -437,6 +514,7 @@ case "$command_name" in
       echo "Skipping Ansible decommission hooks (no --users-vars provided)."
     fi
 
+    run_tg_destroy "$log_transfer_dir"
     run_tg_destroy "$jump_hosts_dir"
     run_tg_destroy "$endpoints_dir"
     run_tg_destroy "$observability_dir"

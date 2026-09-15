@@ -52,6 +52,7 @@ For this platform, typical endpoint count is 4 (`ssm`, `ssmmessages`, `ec2messag
 - Systems Manager Just-in-time node access (if enabled): per-node-hour.
 - KMS request charges (usually small, usage-dependent).
 - NAT Gateway (if used instead of private endpoints).
+- Log-transfer S3: Intelligent-Tiering storage for infrequent archives; default expire after 730 days. Usually small unless operators upload large dumps often. No extra KMS CMK.
 
 ## Input Worksheet (Copy to Spreadsheet)
 
