@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Fake ansible-galaxy for shell tests; logs argv when FAKE_ANSIBLE_LOG is set.
+set -euo pipefail
+
+if [[ -n "${FAKE_ANSIBLE_LOG:-}" ]]; then
+  printf 'ansible-galaxy %q ' "$@" >>"$FAKE_ANSIBLE_LOG"
+  echo >>"$FAKE_ANSIBLE_LOG"
+fi
+
+exit 0

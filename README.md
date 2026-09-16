@@ -15,7 +15,7 @@ Turn-key solution for deploying and managing private AWS jump hosts through AWS 
 - IMDSv2-only EC2 metadata configuration.
 - No SSH ingress requirement.
 - No local password or SSH-key auth provisioning by default.
-- Least-privilege instance role for SSM agent functions.
+- The jump-host EC2 instance is intentionally without significant IAM role privileges. The instance role exists only so the host can run the SSM agent and so operators can start interactive Session Manager sessions. Operators bring their own IAM Identity Center (or IAM) credentials into the session for all environment work, including `log-transfer`; the instance profile is not a fallback principal.
 - Session logging dependencies provisioned in CloudWatch.
 - External IAM Identity Center controls integrated via deterministic host tags.
 

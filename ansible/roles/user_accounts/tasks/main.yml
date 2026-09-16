@@ -1,16 +1,23 @@
 ---
-- name: Validate user definition schema
-  ansible.builtin.assert:
-    that:
-      - item.username is string
-      - item.groups is defined
-      - item.groups is iterable
-      - item.sudo_profile in ['none', 'ops', 'admin']
-      - item.state is not defined or item.state in ['present', 'absent']
-    fail_msg: "Invalid user schema for {{ item | to_nice_json }}"
-  loop: "{{ user_accounts_users }}"
-  loop_control:
-    label: "{{ item.username | default('unknown') }}"
+- name: Resolve shared users validation policy helper
+  ansible.builtin.set_fact:
+    user_accounts_users_validator_cmd: >-
+      {{
+        user_accounts_users_validator
+        if (user_accounts_users_validator | default('') | length) > 0
+        else (role_path ~ '/../../../scripts/validate_users_vars.py')
+      }}
+
+- name: Apply shared users validation policy
+  ansible.builtin.command:
+    argv:
+      - "{{ user_accounts_users_validator_cmd }}"
+      - --json
+    stdin: "{{ {'users': user_accounts_users | default([])} | to_json }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  changed_when: false
 
 - name: Gather local passwd database
   ansible.builtin.getent:

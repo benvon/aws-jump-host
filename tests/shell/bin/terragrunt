@@ -5,6 +5,15 @@ set -euo pipefail
 if [[ -n "${FAKE_TG_LOG:-}" ]]; then
   printf '%q ' "$@" >>"$FAKE_TG_LOG"
   echo >>"$FAKE_TG_LOG"
+  if [[ "${JUMP_HOST_ORCHESTRATE+x}" ]]; then
+    printf 'JUMP_HOST_ORCHESTRATE=%s\n' "$JUMP_HOST_ORCHESTRATE" >>"$FAKE_TG_LOG"
+  fi
+  if [[ "${JUMP_HOST_USERS_VARS+x}" ]]; then
+    printf 'JUMP_HOST_USERS_VARS=%s\n' "$JUMP_HOST_USERS_VARS" >>"$FAKE_TG_LOG"
+  fi
+  if [[ "${JUMP_HOST_USERS_VALIDATOR+x}" ]]; then
+    printf 'JUMP_HOST_USERS_VALIDATOR=%s\n' "$JUMP_HOST_USERS_VALIDATOR" >>"$FAKE_TG_LOG"
+  fi
 fi
 
 args=()
@@ -30,6 +39,10 @@ fi
 
 if [[ "${1:-}" == output && "${2:-}" == -json ]]; then
   if [[ "${3:-}" == hosts ]]; then
+    if [[ "$scenario" == "hosts_empty" ]]; then
+      echo '{}'
+      exit 0
+    fi
     if [[ "$scenario" == "hosts_ok" ]]; then
       jq -n -c '{ "core-01": { instance_id: "i-abc", private_ip: "10.0.0.5", access_profile: "ops" } }'
       exit 0
@@ -42,6 +55,25 @@ if [[ "${1:-}" == output && "${2:-}" == -json ]]; then
     exit 0
   fi
   echo "fake: output -json unavailable" >&2
+  exit 1
+fi
+
+if [[ "${1:-}" == output && "${2:-}" == -raw ]]; then
+  if [[ "${FAKE_TG_OUTPUT_FAIL:-}" == "1" ]]; then
+    echo "fake: output -raw ${3:-} unavailable" >&2
+    exit 1
+  fi
+  case "${3:-}" in
+    bucket_name)
+      echo "${FAKE_TG_BUCKET:-example-log-transfer-bucket}"
+      exit 0
+      ;;
+    region)
+      echo "${FAKE_TG_REGION:-us-east-1}"
+      exit 0
+      ;;
+  esac
+  echo "fake: output -raw ${3:-} unavailable" >&2
   exit 1
 fi
 

@@ -9,11 +9,9 @@ terraform {
   }
 }
 
-data "aws_ssm_parameter" "al2023_ami_x86_64" {
-  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
-}
-
 data "aws_partition" "current" {}
+
+data "aws_region" "current" {}
 
 data "aws_subnet" "host" {
   for_each = var.hosts
@@ -36,12 +34,30 @@ locals {
     for host_name, host in local.normalized_hosts : host_name => host
     if length(host.security_group_ids) == 0
   }
+
+  hosts_using_default_ami = [
+    for host_name, host in local.normalized_hosts : host_name
+    if try(host.ami_id, null) == null && host.ami_ssm_parameter_name == null
+  ]
+}
+
+# Only look up the regional default AMI when at least one host will actually use it.
+data "aws_ssm_parameter" "al2023_ami_x86_64" {
+  count = length(local.hosts_using_default_ami) > 0 ? 1 : 0
+  name  = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+}
+
+# S3 gateway endpoints are reached via the regional managed prefix list, not the VPC CIDR.
+# Only hosts that get a module-created SG need this lookup (custom SGs are caller-owned).
+data "aws_ec2_managed_prefix_list" "s3" {
+  count = length(local.default_sg_hosts) > 0 ? 1 : 0
+  name  = "com.amazonaws.${data.aws_region.current.name}.s3"
 }
 
 data "aws_ssm_parameter" "host_ami" {
   for_each = {
     for host_name, host in local.normalized_hosts : host_name => host.ami_ssm_parameter_name
-    if try(host.ami_id, null) == null && try(host.ami_ssm_parameter_name, null) != null
+    if try(host.ami_id, null) == null && host.ami_ssm_parameter_name != null
   }
 
   name = each.value
@@ -58,32 +74,54 @@ data "aws_vpc" "host" {
 locals {
   # Compute the full egress ruleset (per host) for the module-created default security group.
   #
-  # The SSM baseline rule (TCP/443 to the host's VPC primary CIDR) is ALWAYS prepended so that
-  # SSM Session Manager (ssm, ec2messages, ssmmessages VPC interface endpoints) remains reachable
-  # even when restrict_egress is true and egress_rules is empty.
+  # Baseline rules are ALWAYS prepended:
+  # - TCP/443 to the host's VPC primary CIDR for SSM interface endpoints
+  # - TCP/443 to the regional S3 managed prefix list for the S3 gateway endpoint
+  #   (Ansible aws_ssm transfers and log-transfer uploads)
   #
   # When restrict_egress is false, an additional unrestricted TCP/443 rule is appended.
   # When restrict_egress is true, only the caller-supplied egress_rules are appended.
+  default_sg_extra_egress = var.restrict_egress ? [
+    for rule in var.egress_rules : {
+      description     = rule.description
+      from_port       = rule.from_port
+      to_port         = rule.to_port
+      protocol        = rule.protocol
+      cidr_blocks     = rule.cidr_blocks
+      prefix_list_ids = []
+    }
+    ] : [
+    {
+      description     = "Allow HTTPS egress for SSM and AWS API access"
+      from_port       = 443
+      to_port         = 443
+      protocol        = "tcp"
+      cidr_blocks     = ["0.0.0.0/0"]
+      prefix_list_ids = []
+    }
+  ]
+
   default_sg_egress_rules = {
     for host_name, host in local.default_sg_hosts : host_name => concat(
       [
         {
-          description = "Allow HTTPS to VPC CIDR for SSM, EC2Messages, and SSMMessages endpoints"
-          from_port   = 443
-          to_port     = 443
-          protocol    = "tcp"
-          cidr_blocks = [data.aws_vpc.host[host_name].cidr_block]
+          description     = "Allow HTTPS to VPC CIDR for SSM, EC2Messages, and SSMMessages endpoints"
+          from_port       = 443
+          to_port         = 443
+          protocol        = "tcp"
+          cidr_blocks     = [data.aws_vpc.host[host_name].cidr_block]
+          prefix_list_ids = []
+        },
+        {
+          description     = "Allow HTTPS to S3 via gateway endpoint prefix list"
+          from_port       = 443
+          to_port         = 443
+          protocol        = "tcp"
+          cidr_blocks     = []
+          prefix_list_ids = [data.aws_ec2_managed_prefix_list.s3[0].id]
         }
       ],
-      var.restrict_egress ? var.egress_rules : [
-        {
-          description = "Allow HTTPS egress for SSM and AWS API access"
-          from_port   = 443
-          to_port     = 443
-          protocol    = "tcp"
-          cidr_blocks = ["0.0.0.0/0"]
-        }
-      ]
+      local.default_sg_extra_egress
     )
   }
 }
@@ -102,6 +140,8 @@ data "aws_iam_policy_document" "ec2_assume_role" {
 }
 
 resource "aws_iam_role" "instance" {
+  # SSM-only by design: agent + interactive sessions. Operators bring their own
+  # credentials for environment APIs (log-transfer, EKS, and so on).
   name_prefix        = "${var.name_prefix}-instance-"
   assume_role_policy = data.aws_iam_policy_document.ec2_assume_role.json
   tags               = var.common_tags
@@ -178,11 +218,12 @@ resource "aws_security_group" "default" {
   dynamic "egress" {
     for_each = local.default_sg_egress_rules[each.key]
     content {
-      description = egress.value.description
-      from_port   = egress.value.from_port
-      to_port     = egress.value.to_port
-      protocol    = egress.value.protocol
-      cidr_blocks = egress.value.cidr_blocks
+      description     = egress.value.description
+      from_port       = egress.value.from_port
+      to_port         = egress.value.to_port
+      protocol        = egress.value.protocol
+      cidr_blocks     = length(egress.value.cidr_blocks) > 0 ? egress.value.cidr_blocks : null
+      prefix_list_ids = length(egress.value.prefix_list_ids) > 0 ? egress.value.prefix_list_ids : null
     }
   }
 
@@ -194,7 +235,7 @@ resource "aws_security_group" "default" {
 resource "aws_instance" "host" {
   for_each = local.normalized_hosts
 
-  ami                         = coalesce(try(each.value.ami_id, null), try(data.aws_ssm_parameter.host_ami[each.key].value, null), data.aws_ssm_parameter.al2023_ami_x86_64.value)
+  ami                         = coalesce(try(each.value.ami_id, null), try(data.aws_ssm_parameter.host_ami[each.key].value, null), try(data.aws_ssm_parameter.al2023_ami_x86_64[0].value, null))
   instance_type               = each.value.instance_type
   subnet_id                   = each.value.subnet_id
   vpc_security_group_ids      = length(each.value.security_group_ids) > 0 ? each.value.security_group_ids : [aws_security_group.default[each.key].id]

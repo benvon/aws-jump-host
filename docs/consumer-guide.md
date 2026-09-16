@@ -8,6 +8,8 @@ For AWS Security/IAM and user provisioning prerequisites, use:
 
 - `docs/security-user-prerequisites.md`
 
+Operators authenticate with their own Identity Center / IAM credentials. The jump-host EC2 instance role is intentionally without significant privileges (SSM agent and interactive sessions only); it is not used for `log-transfer` or other environment API calls.
+
 For cost planning and estimation framework, use:
 
 - `docs/cost-estimation.md`
@@ -108,9 +110,11 @@ By default, VPC endpoints include this private-EKS management baseline:
 
 To override defaults for a region, set `additional_interface_endpoint_services` in `region.hcl`.
 
-For host configuration changes without Terraform execution (for example user add/remove only):
+For host configuration changes that do not recreate jump hosts (for example user add/remove):
 
 - `./scripts/orchestrate.sh configure --live-dir ...`
+
+`configure` applies the `log-transfer` stack (so bucket-policy upload and download grants match `users[].iam_role_arns`) and then runs Ansible. Other stacks are not applied. Use `--auto-approve` for non-interactive runs. Users with `state: absent` are omitted from the bucket policy.
 
 For teardown:
 
@@ -122,12 +126,12 @@ Non-interactive CI or scripted applies should append `--auto-approve` to both `a
 
 External vars must follow:
 
-- `username` (required)
+- `username` (required, unique, valid Linux account name: `^[a-z_][a-z0-9_-]{0,31}$`)
 - `groups` (required list)
 - `sudo_profile` (required: `none|ops|admin`)
-- optional `state`, `shell`, `home`
+- optional `state`; optional `shell` and `home` (absolute paths when set)
 - optional `access_profile` (required when `iam_role_arns` is set)
-- optional `iam_role_arns` (list of IAM role ARNs to allowlist for SSM session start)
+- optional `iam_role_arns` (list of IAM role ARNs to allowlist for SSM session start and for log-transfer upload/download)
 - optional `ssm_session_linux_user` (defaults to `username`; used for `SSMSessionRunAs` mapping)
 
 If `iam_role_arns` are provided, the `ssm-self-management` stack maps each role to that user's `access_profile` and Linux user and attaches an inline IAM policy that restricts Session Manager access to:
@@ -155,6 +159,13 @@ Per-environment jump-host login helpers (`/usr/local/bin/awslogin`, `/usr/local/
 
 - `AWS_PROFILE` (and typically `AWS_REGION`) in `jump_host_login_env` / `jump_host_login_env_extra`
 - `jump_host_eks_cluster_name` or `jump_host_eks_cluster_name_extra` for that environment’s EKS cluster (written to `/etc/jump-host-eks-cluster`; `kubelogin` errors if the file is missing or empty)
+
+Per-environment `log-transfer` (S3 bucket + `/usr/local/bin/log-transfer`) needs:
+
+- `users[].iam_role_arns` from the same extra-vars file as Ansible (`--users-vars`). `orchestrate.sh` exports that path as `JUMP_HOST_USERS_VARS` (and `JUMP_HOST_ORCHESTRATE=1`) so the `log-transfer` stack’s bucket policy matches the operators you provision. Omitting `--users-vars` is `users: []` for both Ansible and the bucket policy; a leftover `JUMP_HOST_USERS_VARS` or ancestor `ansible/users.yaml` is not used. Users with `state: absent` are omitted. A missing, unreadable, or schema-invalid selected users file fails closed before Terraform runs. `scripts/validate_users_vars.py` is the policy helper for orchestrate, Terragrunt (`--print-downloader-arns`), and Ansible `user_accounts`: Linux usernames, unique names, list types, present-vs-null keys, and omitting `state: absent` from download ARNs. Direct Terragrunt uses that helper (a present key with YAML null is defined, not omitted). If you run Terragrunt directly, set `JUMP_HOST_USERS_VARS` or keep `ansible/users.yaml` as an ancestor of the stack. From an external live repo, also set `JUMP_HOST_USERS_VALIDATOR` to this repository’s `scripts/validate_users_vars.py` (`orchestrate.sh` exports that path automatically). Identity Center reserved roles are not mutated. Opening the printed S3 console URL uses the operator’s existing SSO/IAM identity; this module cannot grant account-level `s3:ListAllMyBuckets` on a bucket policy, and it does not attach identity policies to reserved SSO roles. `log-transfer` on the host uses those same operator credentials (`AWS_PROFILE` / exported keys), not the EC2 instance role. If the ARN list is empty, uploads and console downloads return 403 until ARNs are set and `log-transfer` is re-applied. The jump-host instance role is SSM-only and is not granted S3 access on this bucket.
+- `orchestrate.sh apply` or `configure` after the `log-transfer` stack exists so Ansible writes `/etc/jump-host-log-transfer-bucket` and `/etc/jump-host-log-transfer-region`. `configure` also re-applies `log-transfer` so add/remove of `iam_role_arns` does not require a full infra apply. A failed Terragrunt output lookup on apply/configure is an error (it will not wipe those files). `plan` leaves existing host files unchanged when outputs are unavailable.
+
+**Upgrade:** Existing live repos must add `<region>/log-transfer/` (copy from `examples/live/.../log-transfer/`). `log-transfer` is in `required_dirs`; without that directory, `orchestrate.sh` refuses to run.
 
 ## Local and CI Validation
 

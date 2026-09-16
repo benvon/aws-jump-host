@@ -117,6 +117,7 @@ policy-test:
 
 contract-test:
 	./tests/contracts/check_log_group.sh
+	./tests/contracts/check_log_transfer.sh
 	./tests/contracts/check_tool_pins.sh
 	./tests/contracts/check_deprecated_vars.sh
 

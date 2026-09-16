@@ -33,13 +33,13 @@ variable "volume_kms_key_id" {
 }
 
 variable "restrict_egress" {
-  description = "When true, the module-created default security group uses only the rules in `egress_rules` for outbound traffic (in addition to the always-applied SSM baseline that allows TCP/443 to the VPC CIDR). An empty `egress_rules` list with `restrict_egress = true` will allow only the SSM baseline. When false (default), outbound TCP/443 to 0.0.0.0/0 is allowed in addition to the SSM baseline."
+  description = "When true, the module-created default security group uses only the rules in `egress_rules` for outbound traffic (in addition to the always-applied SSM VPC CIDR and S3 prefix-list HTTPS baselines). An empty `egress_rules` list with `restrict_egress = true` will allow only those baselines. When false (default), outbound TCP/443 to 0.0.0.0/0 is allowed in addition to the baselines."
   type        = bool
   default     = false
 }
 
 variable "egress_rules" {
-  description = "Additional explicit egress rules applied to the module-created default security group when `restrict_egress` is true. Each rule requires `cidr_blocks`, `from_port`, `to_port`, and `protocol`. `description` is optional. The SSM baseline rule (TCP/443 to the VPC primary CIDR) is always applied automatically and does not need to be included here."
+  description = "Additional explicit egress rules applied to the module-created default security group when `restrict_egress` is true. Each rule requires `cidr_blocks`, `from_port`, `to_port`, and `protocol`. `description` is optional. The SSM VPC CIDR and S3 prefix-list HTTPS baselines are always applied automatically and do not need to be included here."
   type = list(object({
     description = optional(string, "")
     from_port   = number

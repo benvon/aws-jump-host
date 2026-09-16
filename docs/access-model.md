@@ -24,6 +24,12 @@ This repository owns:
 - Compliance preflight checks for required SSM settings
 - Example policy templates for central IAM teams
 
+## Jump-host instance role
+
+The EC2 instance role is intentionally without significant privileges. It exists so the SSM agent can run and so operators can start interactive sessions. It is **not** used for S3, EKS, or other environment operations.
+
+Operators bring their own IAM Identity Center (or IAM) credentials into the session. `log-transfer`, `awslogin`, and `kubelogin` use those credentials (`AWS_PROFILE` / exported keys), not the instance profile.
+
 ## Tag Contract for IAM Conditions
 
 Terraform applies these key tags on jump instances:

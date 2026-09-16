@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+# Jump-host helper: zip caller paths, multipart-upload to the log-transfer bucket, print console URL.
+# Uses the operator's AWS_PROFILE / keys. The EC2 instance role is SSM-only and is not used.
+set -euo pipefail
+
+die() {
+  echo "Error: $*" >&2
+  exit 1
+}
+
+require_safe() {
+  local name="$1" value="$2" pattern="$3"
+  [[ "$value" =~ $pattern ]] || die "Unsafe ${name}."
+}
+
+# Strip CR/LF and surrounding whitespace (bucket/region files and `aws configure get`).
+trim() {
+  tr -d '\n\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+}
+
+trim_file() {
+  local f="$1"
+  [[ -r "$f" ]] || return 0
+  trim <"$f"
+}
+
+[[ $# -ge 1 ]] || die "Usage: log-transfer <path> [path...]"
+
+for p in "$@"; do
+  [[ -e "$p" && -r "$p" ]] || die "Path missing or unreadable: $p"
+done
+
+command -v zip >/dev/null 2>&1 || die "zip not found on PATH."
+command -v zipinfo >/dev/null 2>&1 || die "zipinfo not found on PATH."
+command -v aws >/dev/null 2>&1 || die "aws CLI not found on PATH."
+
+bucket="${JUMP_HOST_LOG_TRANSFER_BUCKET:-}"
+region="${JUMP_HOST_LOG_TRANSFER_REGION:-}"
+if [[ -z "$bucket" ]]; then
+  bucket="$(trim_file "${JUMP_HOST_LOG_TRANSFER_BUCKET_FILE:-/etc/jump-host-log-transfer-bucket}")"
+fi
+if [[ -z "$region" ]]; then
+  region="$(trim_file "${JUMP_HOST_LOG_TRANSFER_REGION_FILE:-/etc/jump-host-log-transfer-region}")"
+fi
+[[ -n "$bucket" ]] || die "No log-transfer bucket configured (set JUMP_HOST_LOG_TRANSFER_BUCKET or /etc/jump-host-log-transfer-bucket)."
+[[ -n "$region" ]] || die "No log-transfer region configured (set JUMP_HOST_LOG_TRANSFER_REGION or /etc/jump-host-log-transfer-region)."
+require_safe "log-transfer bucket" "$bucket" '^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$'
+require_safe "log-transfer region" "$region" '^[a-z0-9][a-z0-9-]*$'
+
+[[ -n "${HOME:-}" ]] || die "HOME is not set; cannot write zip cache."
+
+user_name="$(id -un)"
+host_name="$(hostname -s 2>/dev/null || hostname)"
+ts="$(date -u +%Y%m%dT%H%M%SZ)"
+suffix="$(od -An -N2 -tx1 /dev/urandom | tr -d ' \n' | tr 'A-F' 'a-f')"
+[[ ${#suffix} -eq 4 ]] || die "Could not generate a 4-character object-key suffix."
+require_safe "linux username" "$user_name" '^[a-z_][a-z0-9_-]{0,31}$'
+require_safe "hostname" "$host_name" '^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$'
+require_safe "timestamp" "$ts" '^[0-9]{8}T[0-9]{6}Z$'
+key="${user_name}/${ts}-${host_name}-${suffix}.zip"
+require_safe "object key" "$key" '^[A-Za-z0-9._][A-Za-z0-9._/-]*\.zip$'
+
+cache_root="${HOME}/.cache/log-transfer"
+mkdir -p "$cache_root"
+work_dir="$(mktemp -d "${cache_root}/run.XXXXXX")"
+zip_path="${work_dir}/archive.zip"
+aws_config="${work_dir}/aws-config"
+cleanup() { rm -rf "$work_dir"; }
+trap cleanup EXIT
+
+zip_paths=()
+for p in "$@"; do
+  # Info-ZIP treats a lone "-" as stdin even after "--".
+  if [[ "$p" == - ]]; then
+    zip_paths+=("./-")
+  else
+    zip_paths+=("$p")
+  fi
+done
+zip -r "$zip_path" -- "${zip_paths[@]}" >/dev/null
+set +o pipefail
+first_entry="$(zipinfo -1 "$zip_path" | head -n 1 || true)"
+set -o pipefail
+[[ -n "${first_entry:-}" ]] || die "Zip archive is empty."
+
+active_profile="${AWS_PROFILE:-${AWS_DEFAULT_PROFILE:-default}}"
+require_safe "AWS profile name" "$active_profile" '^[A-Za-z0-9._-]+$'
+
+# AWS CLI has no flags or env vars for s3 transfer settings (multipart_*,
+# max_concurrent_requests). Write a tiny config for this process only: the
+# active profile, a credential_process back to the operator profile, and the
+# tool S3 settings. Do not copy or rewrite ~/.aws/config.
+export_creds="${work_dir}/export-creds"
+{
+  printf '#!/usr/bin/env bash\n'
+  printf 'set -euo pipefail\n'
+  if [[ -n "${AWS_CONFIG_FILE+x}" ]]; then
+    printf 'export AWS_CONFIG_FILE=%q\n' "$AWS_CONFIG_FILE"
+  else
+    printf 'unset AWS_CONFIG_FILE\n'
+  fi
+  printf 'export AWS_EC2_METADATA_DISABLED=true\n'
+  printf 'exec aws configure export-credentials --profile %q --format process\n' "$active_profile"
+} >"$export_creds"
+chmod +x "$export_creds"
+
+with_operator_creds() {
+  env -u AWS_WEB_IDENTITY_TOKEN_FILE -u AWS_ROLE_ARN -u AWS_ROLE_SESSION_NAME \
+    -u AWS_CONTAINER_CREDENTIALS_RELATIVE_URI -u AWS_CONTAINER_CREDENTIALS_FULL_URI \
+    -u AWS_CONTAINER_AUTHORIZATION_TOKEN -u AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE \
+    AWS_EC2_METADATA_DISABLED=true \
+    "$@"
+}
+
+s3_multipart_threshold="16MB"
+s3_multipart_chunksize="64MB"
+s3_max_concurrent_requests="4"
+{
+  if [[ "$active_profile" == default ]]; then
+    printf '[default]\n'
+  else
+    printf '[profile %s]\n' "$active_profile"
+  fi
+  printf 'credential_process = %s\n' "$export_creds"
+  printf 's3 =\n'
+  printf '    multipart_threshold = %s\n' "$s3_multipart_threshold"
+  printf '    multipart_chunksize = %s\n' "$s3_multipart_chunksize"
+  printf '    max_concurrent_requests = %s\n' "$s3_max_concurrent_requests"
+} >"$aws_config"
+
+s3_summary="multipart_threshold=${s3_multipart_threshold} multipart_chunksize=${s3_multipart_chunksize} max_concurrent_requests=${s3_max_concurrent_requests}"
+# Remaining nested s3 keys: inherit via `aws configure get`, never by parsing INI.
+for s3_setting in \
+    max_bandwidth \
+    max_queue_size \
+    addressing_style \
+    use_accelerate_endpoint \
+    payload_signing_enabled \
+    use_dualstack_endpoint
+do
+  s3_setting_value="$(
+    with_operator_creds aws configure get "s3.${s3_setting}" --profile "$active_profile" 2>/dev/null || true
+  )"
+  s3_setting_value="$(printf '%s' "$s3_setting_value" | trim)"
+  [[ -n "$s3_setting_value" ]] || continue
+  [[ "$s3_setting_value" =~ ^[A-Za-z0-9._,/%-]+$ ]] || continue
+  printf '    %s = %s\n' "$s3_setting" "$s3_setting_value" >>"$aws_config"
+  s3_summary="${s3_summary} ${s3_setting}=${s3_setting_value}"
+done
+echo "log-transfer s3: ${s3_summary}" >&2
+
+with_operator_creds \
+  AWS_CONFIG_FILE="$aws_config" \
+  aws s3 cp "$zip_path" "s3://${bucket}/${key}" \
+    --region "$region" \
+    --storage-class INTELLIGENT_TIERING \
+    --only-show-errors
+
+printf 'https://s3.console.aws.amazon.com/s3/object/%s?region=%s&prefix=%s\n' "$bucket" "$region" "$key"
