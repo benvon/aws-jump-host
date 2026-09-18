@@ -7,12 +7,61 @@ Your organization should give you:
 - An **AWS IAM Identity Center (SSO)** permission set or role to use in the jump-host account
 - A named **AWS CLI profile** (or the values to put in `~/.aws/config`)
 - Which **AWS Region** the host runs in (for example `us-west-2`)
+- Whether this environment uses **per-user** Session Manager Run As or a **shared `ec2-user`** session
 
 If `aws ssm start-session` fails with permission errors, your security team can use `docs/security-user-prerequisites.md` as the IAM checklist.
 
-The jump host itself has **no significant AWS privileges**. The EC2 instance role is only for the SSM agent and your interactive session. Once you are on the host, AWS CLI tools (`awslogin`, `kubelogin`, `log-transfer`) use **your** SSO profile or exported keys, not the instance role. Run `awslogin` if your session credentials have expired.
+### Already set up?
 
----
+```bash
+# On your laptop
+export AWS_PROFILE=your-sso-profile-name
+export AWS_REGION=us-west-2
+aws sso login --profile "$AWS_PROFILE"
+jump-host-ssm.sh doctor
+jump-host-ssm.sh connect --tag Environment=stage --name-contains core
+
+# After you are on the jump host
+whoami; echo "$HOME"; echo "$AWS_PROFILE"
+awslogin
+aws sts get-caller-identity
+```
+
+If those steps fail or the concepts are new, read the sections below before retrying.
+
+## How privileges work on this jump host
+
+Connecting with Session Manager only proves you may **open a shell**. It does **not** give you the EC2 instance's AWS API powers.
+
+The jump-host **EC2 instance role is SSM-only by design** (agent + interactive sessions). While you are logged in, **any and all** AWS-backed activity uses **your SSO / IAM role**—**not** the instance role. That includes `aws`, `awslogin`, `kubelogin`, `log-transfer`, kubectl talking to EKS, and similar tools.
+
+Unlearn the habit "I'm on the box, so the instance role will just work." Here it will not.
+
+Practical check after connect: if AWS calls fail with credential or AccessDenied errors, run `awslogin`, then `aws sts get-caller-identity`, and confirm the account/role you expect (not an instance-role ARN).
+
+## Two places for AWS config
+
+Your **laptop** and the **jump host** each have their own AWS CLI configuration. Fixing one does **not** change the other.
+
+| Step | Which machine | Which config | Purpose |
+|------|---------------|--------------|---------|
+| `aws sso login` / `jump-host-ssm.sh` / console Session Manager | Your laptop | Laptop `~/.aws/config` (and cached SSO tokens) | Authenticate to **start** the session |
+| `awslogin`, `kubelogin`, `log-transfer`, ad-hoc `aws` | Jump host | That Linux user's `~/.aws/config` on the host | Authenticate to **call AWS from inside** the session |
+
+After the host has been configured at least once, home directories live on a persistent `/home` volume, so that Linux user's `~/.aws` on the host usually survives instance replacement. Admins may pre-seed a profile and set `AWS_PROFILE` via login env. If the profile is missing on the host, paste the same kind of SSO block your admin gave you (or ask them to seed it).
+
+## Which Linux user you land as
+
+Session Manager may land you as **your own Linux user** or as shared **`ec2-user`**, depending on how this environment's IaC / Session Manager preferences are set. Your host `~/.aws` follows **that** Linux home—not your laptop.
+
+| | Per-user Run As | Shared `ec2-user` |
+|--|-----------------|-------------------|
+| How to tell | `whoami` is your Linux username | `whoami` is `ec2-user` |
+| Home / `~/.aws` | Under `/home/<you>/` | Under `/home/ec2-user/` |
+| Who maintains host profile | Usually you (or admin seeds your home) | Shared; coordinate with teammates/admin |
+| What "my config" means | Not the laptop's; **this** host home | Not the laptop's; the **shared** host home |
+
+Ask your admin which model this environment uses. How Run As is chosen (`SSMSessionRunAs` / account defaults) is covered briefly later and in `docs/security-user-prerequisites.md` / `docs/access-model.md` for admins.
 
 ## Quick start (recommended): helper script
 
