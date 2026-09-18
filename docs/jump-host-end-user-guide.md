@@ -15,7 +15,7 @@ If `aws ssm start-session` fails with permission errors, your security team can 
 
 ```bash
 # On your laptop
-export AWS_PROFILE=your-sso-profile-name
+export AWS_PROFILE=your-sso-profile
 export AWS_REGION=us-west-2
 aws sso login --profile "$AWS_PROFILE"
 jump-host-ssm.sh doctor
@@ -170,7 +170,7 @@ The script is Bash (not POSIX `sh`). It works with macOS `/bin/bash` 3.2 and wit
 Set the profile and region your admin told you to use:
 
 ```bash
-export AWS_PROFILE=your-sso-profile-name
+export AWS_PROFILE=your-sso-profile
 export AWS_REGION=us-west-2
 ```
 
@@ -231,11 +231,11 @@ The command prints a short `log-transfer s3:` line with the transfer settings it
 
 ### Choosing the Linux (OS) user for the session
 
-The [**Which Linux user you land as**](#which-linux-user-you-land-as) table earlier in this guide is what operators need day to day. Session Manager **Run As** is chosen by IAM tag **`SSMSessionRunAs`** on your role (or IdP session tags) or by the account default in Session Manager preferences—not a free-form CLI flag on the standard shell document. Optional: `jump-host-ssm.sh connect --document-name <name>` if your org uses a different Session document. For details and `InvalidDocumentContent` pitfalls with placeholder Run As values, see `docs/access-model.md` and `docs/security-user-prerequisites.md`.
+The [**Which Linux user you land as**](#which-linux-user-you-land-as) table earlier in this guide is what operators need day to day. Session Manager **Run As** is chosen by IAM tag **`SSMSessionRunAs`** on your role (or IdP session tags) or by the account default in Session Manager preferences—not a free-form CLI flag on the standard shell document. Optional: `jump-host-ssm.sh connect --document-name <name>` if your org uses a different Session document. For `InvalidDocumentContent` pitfalls with placeholder Run As values, see `docs/access-model.md`.
 
 ### Shell startup, working directory, and prompt
 
-The Session Manager preferences document sets a **short** `inputs.shellProfile.linux` that **sources** **`/etc/profile.d/jump-host-login-env.sh`** and **`/etc/profile.d/jump-host-path.sh`** when present (managed defaults such as **`AWS_PROFILE`** and **`~/bin` prepended on `PATH`**) for every Run As user, including **`ec2-user`**—before **`cd`** to your home directory and **`exec` interactive bash** (`bash -i`). That matches how Amazon Linux 2023 loads **`/etc/bashrc`**, which in turn sources **`/etc/profile.d/*.sh`**—including the managed environment segment for **`PS1`** in **`/etc/profile.d/zzz-jump-host-prompt.sh`** (installed by Ansible; the `zzz-` prefix makes it run after other `profile.d` snippets that set `PS1`). Your client may print that profile line once when the session starts; that is normal. The prompt label is resolved in order: **`JUMP_HOST_ENVIRONMENT`** if you set it, then **`/etc/jump-host-environment`** (written at configure time from **`--env`** / **`JUMP_HOST_ENVIRONMENT`**, or from the instance’s **`Environment` EC2 tag** when those were not passed). Settings in your own **`~/.bashrc`** or **`~/.bash_profile`** run later and **override** `PS1` if you customize it. To turn off the managed segment without changing your dotfiles, use either of the following:
+The Session Manager preferences document sets a **short** `inputs.shellProfile.linux` that **sources** **`/etc/profile.d/jump-host-login-env.sh`** and **`/etc/profile.d/jump-host-path.sh`** when present (managed defaults such as **`AWS_PROFILE`** and **`~/bin` prepended on `PATH`**) for every Run As user, including **`ec2-user`**—before **`cd`** to your home directory and **`exec` interactive bash** (`bash -i`). That matches how Amazon Linux 2023 loads **`/etc/bashrc`**, which in turn sources **`/etc/profile.d/*.sh`**—including the managed environment segment for **`PS1`** in **`/etc/profile.d/zzz-jump-host-prompt.sh`** (installed by Ansible; the `zzz-` prefix makes it run after other `profile.d` snippets that set `PS1`). Your client may print that profile line once when the session starts; that is normal. The prompt label is resolved in order: **`JUMP_HOST_ENVIRONMENT`** if you set it, then **`/etc/jump-host-environment`** (written at configure time from **`--env`** / **`JUMP_HOST_ENVIRONMENT`**, or from the instance’s **`Environment` EC2 tag** when those were not passed), then the instance’s **`Environment` EC2 tag** when your admin has enabled instance tags in metadata. Settings in your own **`~/.bashrc`** or **`~/.bash_profile`** run later and **override** `PS1` if you customize it. To turn off the managed segment without changing your dotfiles, use either of the following:
 
 - Create an empty file `~/.jump-host-disable-prompt`, or
 - Set `export JUMP_HOST_DISABLE_PROMPT=1` before the prompt snippet runs (for example early in `~/.bash_profile`).
@@ -267,7 +267,7 @@ Per-host tags from your live config (for example `Role=jump-host`) are merged in
 2. Sign in:
 
    ```bash
-   aws sso login --profile your-sso-profile-name
+   aws sso login --profile your-sso-profile
    ```
 
    A browser window opens; complete authentication with your org’s IdP.
@@ -275,7 +275,7 @@ Per-host tags from your live config (for example `Role=jump-host`) are merged in
 3. Confirm you are using the expected account and role:
 
    ```bash
-   aws sts get-caller-identity --profile your-sso-profile-name
+   aws sts get-caller-identity --profile your-sso-profile
    ```
 
 If `aws sso login` is not applicable (long-lived keys or another credential flow), use the method your organization documents instead; you still need permission for `ssm:StartSession` on tagged jump hosts.
@@ -293,7 +293,7 @@ You need the **instance ID** (`i-...`) in the correct **region**.
 **Option B — AWS CLI:** after SSO (or other credentials) and plugin install:
 
 ```bash
-export AWS_PROFILE=your-sso-profile-name
+export AWS_PROFILE=your-sso-profile
 export AWS_REGION=us-west-2
 aws ssm start-session --target i-0123456789abcdef0
 ```
@@ -305,7 +305,7 @@ aws ec2 describe-instances \
   --filters "Name=tag:JumpHost,Values=true" "Name=instance-state-name,Values=running" \
   --query 'Reservations[].Instances[].[InstanceId,Tags[?Key==`Name`]|[0].Value]' \
   --output table \
-  --profile your-sso-profile-name \
+  --profile your-sso-profile \
   --region us-west-2
 ```
 

@@ -60,3 +60,5 @@ See `policy-templates/ssm-access-example.json` for a starter pattern that centra
 When role allowlist mappings are configured in `ssm-self-management`, this repository can enforce `aws:PrincipalTag/SSMSessionRunAs` and `aws:PrincipalTag/AccessProfile` in per-role inline policies.
 
 The principal tag values still must be supplied by your identity/federation model (role tags and/or session tags).
+
+For the standard **Standard_Stream** shell Session document, AWS validates `inputs.runAsDefaultUser` as a **literal** username. Placeholder values (for example `{{runAsDefaultUser}}`) are rejected with `InvalidDocumentContent`, and `StartSession` cannot override Run As the way some older examples suggest. Use **`SSMSessionRunAs`** (or your org's IdP → session tag mapping) instead of trying to pass the Linux user from the CLI.
