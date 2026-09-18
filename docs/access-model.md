@@ -30,6 +30,8 @@ The EC2 instance role is intentionally without significant privileges. It exists
 
 Operators bring their own IAM Identity Center (or IAM) credentials into the session. `log-transfer`, `awslogin`, and `kubelogin` use those credentials (`AWS_PROFILE` / exported keys), not the instance profile.
 
+Operator-facing explanation (profiles, dual config, privilege model): `docs/jump-host-end-user-guide.md`.
+
 ## Tag Contract for IAM Conditions
 
 Terraform applies these key tags on jump instances:
