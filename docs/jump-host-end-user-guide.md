@@ -63,6 +63,81 @@ Session Manager may land you as **your own Linux user** or as shared **`ec2-user
 
 Ask your admin which model this environment uses. How Run As is chosen (`SSMSessionRunAs` / account defaults) is covered briefly later and in `docs/security-user-prerequisites.md` / `docs/access-model.md` for admins.
 
+## What an AWS CLI profile and SSO session are
+
+A **profile** is a named block in `~/.aws/config`. For Identity Center it usually points at a start URL, account, and permission set (role).
+
+**`AWS_PROFILE`** tells the AWS CLI which named block to use. On the jump host it is often set for you by login defaults; you still need a matching profile in **that Linux user's** `~/.aws/config` on the host.
+
+**`aws sso login`** (on your laptop) and **`awslogin`** (on the jump host) refresh a time-limited SSO session for that profile. On the host, `awslogin` uses a device-code flow because Session Manager has no browser. When the session expires you will see token-expired or "unable to locate credentials" errors—run login again on the machine where you are working.
+
+Verify on the machine where the work runs:
+
+```bash
+aws sts get-caller-identity
+```
+
+You should see the account and role you expect—not an instance-role ARN.
+
+## Setup
+
+### 1. Gather what your admin should give you
+
+- Profile name (example: `your-sso-profile`)
+- AWS Region (example: `us-west-2`)
+- Whether sessions use per-user Run As or shared `ec2-user`
+- The SSO values for `~/.aws/config` if they have not already created the profile for you
+
+### 2. Configure and sign in on your laptop
+
+Ensure AWS CLI v2 is installed ([Installing the AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)). If your admin has not already created the profile, add a block like this to **your laptop's** `~/.aws/config` (replace placeholders with values they give you):
+
+```ini
+[profile your-sso-profile]
+sso_start_url = https://example.awsapps.com/start
+sso_region = us-west-2
+sso_account_id = 123456789012
+sso_role_name = YourPermissionSet
+region = us-west-2
+```
+
+Then:
+
+```bash
+export AWS_PROFILE=your-sso-profile
+export AWS_REGION=us-west-2
+aws sso login --profile "$AWS_PROFILE"
+aws sts get-caller-identity
+```
+
+Install the Session Manager plugin if you will connect from the CLI ([Install the Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html)).
+
+### 3. Configure the same kind of profile on the jump host
+
+After you connect (Quick start below):
+
+```bash
+whoami
+echo "$HOME"
+echo "$AWS_PROFILE"
+```
+
+If `~/.aws/config` on **this** home already has the profile (admin may have pre-seeded it), you only need `awslogin`. Otherwise create `~/.aws/config` under **this** `$HOME` with the same kind of `[profile …]` block (values from your admin—often the same as the laptop, but it is still a separate file on a separate machine).
+
+```bash
+awslogin
+aws sts get-caller-identity
+```
+
+## Typical first-session workflow
+
+1. On your **laptop**: `aws sso login` for your profile; confirm with `aws sts get-caller-identity`.
+2. Connect to the jump host (helper script or console Session Manager).
+3. On the **host**: check `whoami`, `$HOME`, and `$AWS_PROFILE`.
+4. On the **host**: `awslogin`, then `aws sts get-caller-identity` again.
+5. Use on-host tools as needed (`kubelogin`, `log-transfer`, `aws`, …). They use **your** SSO role.
+6. If AWS calls fail later in the session, re-run `awslogin`—do not assume "the box lost its instance role."
+
 ## Quick start (recommended): helper script
 
 This repository includes `scripts/end-user/jump-host-ssm.sh`, which:
