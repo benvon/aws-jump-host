@@ -231,7 +231,7 @@ The command prints a short `log-transfer s3:` line with the transfer settings it
 
 ### Choosing the Linux (OS) user for the session
 
-The **Which Linux user you land as** table above is what operators need day to day. Session Manager **Run As** is chosen by IAM tag **`SSMSessionRunAs`** on your role (or IdP session tags) or by the account default in Session Manager preferences—not a free-form CLI flag on the standard shell document. Optional: `jump-host-ssm.sh connect --document-name <name>` if your org uses a different Session document. For details and `InvalidDocumentContent` pitfalls with placeholder Run As values, see `docs/access-model.md` and `docs/security-user-prerequisites.md`.
+The [**Which Linux user you land as**](#which-linux-user-you-land-as) table earlier in this guide is what operators need day to day. Session Manager **Run As** is chosen by IAM tag **`SSMSessionRunAs`** on your role (or IdP session tags) or by the account default in Session Manager preferences—not a free-form CLI flag on the standard shell document. Optional: `jump-host-ssm.sh connect --document-name <name>` if your org uses a different Session document. For details and `InvalidDocumentContent` pitfalls with placeholder Run As values, see `docs/access-model.md` and `docs/security-user-prerequisites.md`.
 
 ### Shell startup, working directory, and prompt
 
