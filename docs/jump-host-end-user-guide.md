@@ -31,13 +31,15 @@ If those steps fail or the concepts are new, read the sections below before retr
 
 ## How privileges work on this jump host
 
-Connecting with Session Manager only proves you may **open a shell**. It does **not** give you the EC2 instance's AWS API powers.
+Connecting with Session Manager only proves you may **open a shell**. It does **not** give you useful AWS API powers for environment work.
 
-The jump-host **EC2 instance role is SSM-only by design** (agent + interactive sessions). While you are logged in, **any and all** AWS-backed activity uses **your SSO / IAM role**—**not** the instance role. That includes `aws`, `awslogin`, `kubelogin`, `log-transfer`, kubectl talking to EKS, and similar tools.
+The jump-host **EC2 instance role is SSM-only by design** (agent + interactive sessions). For environment work—`kubelogin`, `log-transfer`, EKS/kubectl, S3, and similar—you must use **your SSO / IAM role** via `AWS_PROFILE` / `awslogin` (or keys you export). Do **not** plan on the instance role as a shared credential.
 
-Unlearn the habit "I'm on the box, so the instance role will just work." Here it will not.
+Unlearn the habit "I'm on the box, so the instance role will just work" for real work. Prefer tools and habits that keep you on your operator profile.
 
-Practical check after connect: if AWS calls fail with credential or AccessDenied errors, run `awslogin`, then `aws sts get-caller-identity`, and confirm the account/role you expect (not an instance-role ARN).
+**Caveat:** The AWS credential chain can still fall back to the limited instance role via instance metadata if you have no usable operator credentials (missing or expired SSO, unset `AWS_PROFILE`, and so on). Some helpers (for example `log-transfer`) deliberately block that fallback; a raw `aws` command may not. Always confirm identity with `aws sts get-caller-identity` and expect your SSO role ARN—not an instance-role ARN—before doing environment work.
+
+Practical check after connect: run `awslogin` if needed, then `aws sts get-caller-identity`, and confirm the account/role you expect.
 
 ## Two places for AWS config
 
@@ -58,8 +60,11 @@ Session Manager may land you as **your own Linux user** or as shared **`ec2-user
 |--|-----------------|-------------------|
 | How to tell | `whoami` is your Linux username | `whoami` is `ec2-user` |
 | Home / `~/.aws` | Under `/home/<you>/` | Under `/home/ec2-user/` |
-| Who maintains host profile | Usually you (or admin seeds your home) | Shared; coordinate with teammates/admin |
+| Who maintains host profile | Usually you (or admin seeds your home) | Shared config under one home |
 | What "my config" means | Not the laptop's; **this** host home | Not the laptop's; the **shared** host home |
+| SSO token cache | Private to your Linux home | **Shared risk** — see below |
+
+**Shared `ec2-user` and `awslogin`:** Today `awslogin` caches SSO tokens under that shared home (typically `~/.aws/sso/cache`). Anyone else who lands as `ec2-user` on the same host can reuse those tokens until they expire, and may act as your role if yours is still cached. Prefer **per-user Run As** for on-host SSO. If your environment still uses shared `ec2-user`, treat on-host `awslogin` as a known gap, coordinate carefully with teammates, and follow [issue #20](https://github.com/benvon/aws-jump-host/issues/20) for the planned per-session credential isolation.
 
 Ask your admin which model this environment uses. How Run As is chosen (`SSMSessionRunAs` / account defaults) is covered briefly later and in `docs/security-user-prerequisites.md` / `docs/access-model.md` for admins.
 
@@ -321,9 +326,10 @@ Use the instance id in the first column with `aws ssm start-session --target`. (
 | `Session Manager plugin not found` | Install the plugin; restart the terminal. |
 | Token expired / SSO errors **on your laptop** | Run `aws sso login --profile ...` again. |
 | Token expired / unable to locate credentials **on the host** | Run `awslogin` on the host; confirm `AWS_PROFILE` and that **this** `$HOME/.aws/config` has that profile (laptop config does not apply). |
-| `sts get-caller-identity` shows an instance-role ARN | You are not using your SSO profile. Check `echo $AWS_PROFILE`, host `~/.aws/config`, and re-run `awslogin`. |
+| `sts get-caller-identity` shows an instance-role ARN | Operator credentials are missing or unused, so the AWS credential chain fell back to the limited instance role via instance metadata. Check `echo $AWS_PROFILE`, host `~/.aws/config`, and re-run `awslogin`. |
 | Fixed laptop `~/.aws` but host tools still fail | Laptop and host configs are separate; configure or seed the profile under the host Linux user’s home. |
 | Unexpected `whoami` / `$HOME` | This environment may use shared `ec2-user` vs per-user Run As; your host `~/.aws` follows that home. Ask your admin which model is in use. |
+| Shared `ec2-user` and SSO token reuse concerns | Prefer per-user Run As. Under shared `ec2-user`, `awslogin` caches tokens in a home other sessions can read. See the shared-user warning above and [issue #20](https://github.com/benvon/aws-jump-host/issues/20). |
 | `AccessDeniedException` on `start-session` | IAM: role needs SSM permissions and ABAC/tag conditions must match the instance (`JumpHost`, `AccessProfile`). See `docs/security-user-prerequisites.md`. |
 | `log-transfer` fails with AccessDenied or “Unable to locate credentials” | Instance role cannot upload. Run `awslogin`, confirm `AWS_PROFILE`, and ensure your role is in this environment’s `users.yaml` `iam_role_arns`. |
 | Script lists no hosts | Wrong account, region, or tags; confirm `JumpHost=true` and instance is **running**. |
@@ -337,3 +343,4 @@ Use the instance id in the first column with `aws ssm start-session --target`. (
 - Architecture (SSM-only instance role): `docs/architecture.md`
 - Access model and Run As ownership: `docs/access-model.md`
 - How admins configure login env and helpers: `docs/consumer-guide.md`
+- Shared-user `awslogin` SSO cache isolation (planned): [issue #20](https://github.com/benvon/aws-jump-host/issues/20)

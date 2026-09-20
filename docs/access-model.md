@@ -61,4 +61,6 @@ When role allowlist mappings are configured in `ssm-self-management`, this repos
 
 The principal tag values still must be supplied by your identity/federation model (role tags and/or session tags).
 
+Prefer **per-user** Run As when operators will run `awslogin` on the host. A shared default such as `ec2-user` puts every session’s SSO token cache under one `$HOME`, so tokens can be reused across concurrent sessions until they expire. Isolation for that model is tracked in [issue #20](https://github.com/benvon/aws-jump-host/issues/20).
+
 For the standard **Standard_Stream** shell Session document, AWS validates `inputs.runAsDefaultUser` as a **literal** username. Placeholder values (for example `{{runAsDefaultUser}}`) are rejected with `InvalidDocumentContent`, and `StartSession` cannot override Run As the way some older examples suggest. Use **`SSMSessionRunAs`** (or your org's IdP → session tag mapping) instead of trying to pass the Linux user from the CLI.
