@@ -43,12 +43,15 @@ Practical check after connect: run `awslogin` if needed, then `aws sts get-calle
 
 ## Two places for AWS config
 
-Your **laptop** and the **jump host** each have their own AWS CLI configuration. Fixing one does **not** change the other.
+Your **laptop** and the **jump host** each have their own AWS CLI configuration. Fixing one does **not** change the other. Starting a session from the **AWS Console** is a third path: it uses your browser console login, not laptop `~/.aws`.
 
 | Step | Which machine | Which config | Purpose |
 |------|---------------|--------------|---------|
-| `aws sso login` / `jump-host-ssm.sh` / console Session Manager | Your laptop | Laptop `~/.aws/config` (and cached SSO tokens) | Authenticate to **start** the session |
+| `aws sso login` / `jump-host-ssm.sh` / `aws ssm start-session` | Your laptop | Laptop `~/.aws/config` (and cached CLI SSO tokens) | Authenticate with the **CLI** to **start** the session |
+| AWS Console → EC2 → Connect → Session Manager | Your browser | Console / Identity Center browser session (not laptop `~/.aws`) | Authenticate in the **console** to **start** the session |
 | `awslogin`, `kubelogin`, `log-transfer`, ad-hoc `aws` | Jump host | That Linux user's `~/.aws/config` on the host | Authenticate to **call AWS from inside** the session |
+
+Console-only operators do **not** need a working laptop CLI profile just to open the browser Session Manager shell. Once on the host, environment work still needs the **host** profile and `awslogin` (or equivalent), same as CLI-connected operators.
 
 After the host has been configured at least once, home directories live on a persistent `/home` volume, so that Linux user's `~/.aws` on the host usually survives instance replacement. Admins may pre-seed a profile and set `AWS_PROFILE` via login env. If the profile is missing on the host, paste the same kind of SSO block your admin gave you (or ask them to seed it).
 
