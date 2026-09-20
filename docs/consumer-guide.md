@@ -10,6 +10,8 @@ For AWS Security/IAM and user provisioning prerequisites, use:
 
 Operators authenticate with their own Identity Center / IAM credentials. The jump-host EC2 instance role is intentionally without significant privileges (SSM agent and interactive sessions only); it is not used for `log-transfer` or other environment API calls.
 
+Operators who need SSO profiles, laptop vs host config, and `awslogin` should start with `docs/jump-host-end-user-guide.md`.
+
 For cost planning and estimation framework, use:
 
 - `docs/cost-estimation.md`

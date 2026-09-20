@@ -7,12 +7,144 @@ Your organization should give you:
 - An **AWS IAM Identity Center (SSO)** permission set or role to use in the jump-host account
 - A named **AWS CLI profile** (or the values to put in `~/.aws/config`)
 - Which **AWS Region** the host runs in (for example `us-west-2`)
+- Whether this environment uses **per-user** Session Manager Run As or a **shared `ec2-user`** session
 
 If `aws ssm start-session` fails with permission errors, your security team can use `docs/security-user-prerequisites.md` as the IAM checklist.
 
-The jump host itself has **no significant AWS privileges**. The EC2 instance role is only for the SSM agent and your interactive session. Once you are on the host, AWS CLI tools (`awslogin`, `kubelogin`, `log-transfer`) use **your** SSO profile or exported keys, not the instance role. Run `awslogin` if your session credentials have expired.
+### Already set up?
 
----
+```bash
+# On your laptop
+export AWS_PROFILE=your-sso-profile
+export AWS_REGION=us-west-2
+aws sso login --profile "$AWS_PROFILE"
+jump-host-ssm.sh doctor
+jump-host-ssm.sh connect --tag Environment=stage --name-contains core
+
+# After you are on the jump host
+whoami; echo "$HOME"; echo "$AWS_PROFILE"
+awslogin
+aws sts get-caller-identity
+```
+
+If those steps fail or the concepts are new, read the sections below before retrying.
+
+## How privileges work on this jump host
+
+Connecting with Session Manager only proves you may **open a shell**. It does **not** give you useful AWS API powers for environment work.
+
+The jump-host **EC2 instance role is SSM-only by design** (agent + interactive sessions). For environment work—`kubelogin`, `log-transfer`, EKS/kubectl, S3, and similar—you must use **your SSO / IAM role** via `AWS_PROFILE` / `awslogin` (or keys you export). Do **not** plan on the instance role as a shared credential.
+
+Unlearn the habit "I'm on the box, so the instance role will just work" for real work. Prefer tools and habits that keep you on your operator profile.
+
+**Caveat:** The AWS credential chain can still fall back to the limited instance role via instance metadata if you have no usable operator credentials (missing or expired SSO, unset `AWS_PROFILE`, and so on). Some helpers (for example `log-transfer`) deliberately block that fallback; a raw `aws` command may not. Always confirm identity with `aws sts get-caller-identity` and expect your SSO role ARN—not an instance-role ARN—before doing environment work.
+
+Practical check after connect: run `awslogin` if needed, then `aws sts get-caller-identity`, and confirm the account/role you expect.
+
+## Two places for AWS config
+
+Your **laptop** and the **jump host** each have their own AWS CLI configuration. Fixing one does **not** change the other. Starting a session from the **AWS Console** is a third path: it uses your browser console login, not laptop `~/.aws`.
+
+| Step | Which machine | Which config | Purpose |
+|------|---------------|--------------|---------|
+| `aws sso login` / `jump-host-ssm.sh` / `aws ssm start-session` | Your laptop | Laptop `~/.aws/config` (and cached CLI SSO tokens) | Authenticate with the **CLI** to **start** the session |
+| AWS Console → EC2 → Connect → Session Manager | Your browser | Console / Identity Center browser session (not laptop `~/.aws`) | Authenticate in the **console** to **start** the session |
+| `awslogin`, `kubelogin`, `log-transfer`, ad-hoc `aws` | Jump host | That Linux user's `~/.aws/config` on the host | Authenticate to **call AWS from inside** the session |
+
+Console-only operators do **not** need a working laptop CLI profile just to open the browser Session Manager shell. Once on the host, environment work still needs the **host** profile and `awslogin` (or equivalent), same as CLI-connected operators.
+
+After the host has been configured at least once, home directories live on a persistent `/home` volume, so that Linux user's `~/.aws` on the host usually survives instance replacement. Admins may pre-seed a profile and set `AWS_PROFILE` via login env. If the profile is missing on the host, paste the same kind of SSO block your admin gave you (or ask them to seed it).
+
+## Which Linux user you land as
+
+Session Manager may land you as **your own Linux user** or as shared **`ec2-user`**, depending on how this environment's IaC / Session Manager preferences are set. Your host `~/.aws` follows **that** Linux home—not your laptop.
+
+| | Per-user Run As | Shared `ec2-user` |
+|--|-----------------|-------------------|
+| How to tell | `whoami` is your Linux username | `whoami` is `ec2-user` |
+| Home / `~/.aws` | Under `/home/<you>/` | Under `/home/ec2-user/` |
+| Who maintains host profile | Usually you (or admin seeds your home) | Shared config under one home |
+| What "my config" means | Not the laptop's; **this** host home | Not the laptop's; the **shared** host home |
+| SSO token cache | Private to your Linux home | **Shared risk** — see below |
+
+**Shared `ec2-user` and `awslogin`:** Today `awslogin` caches SSO tokens under that shared home (typically `~/.aws/sso/cache`). Anyone else who lands as `ec2-user` on the same host can reuse those tokens until they expire, and may act as your role if yours is still cached. Prefer **per-user Run As** for on-host SSO. If your environment still uses shared `ec2-user`, treat on-host `awslogin` as a known gap, coordinate carefully with teammates, and follow [issue #20](https://github.com/benvon/aws-jump-host/issues/20) for the planned per-session credential isolation.
+
+Ask your admin which model this environment uses. How Run As is chosen (`SSMSessionRunAs` / account defaults) is covered briefly later and in `docs/security-user-prerequisites.md` / `docs/access-model.md` for admins.
+
+## What an AWS CLI profile and SSO session are
+
+A **profile** is a named block in `~/.aws/config`. For Identity Center it usually points at a start URL, account, and permission set (role).
+
+**`AWS_PROFILE`** tells the AWS CLI which named block to use. On the jump host it is often set for you by login defaults; you still need a matching profile in **that Linux user's** `~/.aws/config` on the host.
+
+**`aws sso login`** (on your laptop) and **`awslogin`** (on the jump host) refresh a time-limited SSO session for that profile. On the host, `awslogin` uses a device-code flow because Session Manager has no browser. When the session expires you will see token-expired or "unable to locate credentials" errors—run login again on the machine where you are working.
+
+Verify on the machine where the work runs:
+
+```bash
+aws sts get-caller-identity
+```
+
+You should see the account and role you expect—not an instance-role ARN.
+
+## Setup
+
+### 1. Gather what your admin should give you
+
+- Profile name (example: `your-sso-profile`)
+- AWS Region (example: `us-west-2`)
+- Whether sessions use per-user Run As or shared `ec2-user`
+- The SSO values for `~/.aws/config` if they have not already created the profile for you
+
+### 2. Configure and sign in on your laptop
+
+Ensure AWS CLI v2 is installed ([Installing the AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)). If your admin has not already created the profile, add a block like this to **your laptop's** `~/.aws/config` (replace placeholders with values they give you):
+
+```ini
+[profile your-sso-profile]
+sso_start_url = https://example.awsapps.com/start
+sso_region = us-west-2
+sso_account_id = 123456789012
+sso_role_name = YourPermissionSet
+region = us-west-2
+```
+
+Then:
+
+```bash
+export AWS_PROFILE=your-sso-profile
+export AWS_REGION=us-west-2
+aws sso login --profile "$AWS_PROFILE"
+aws sts get-caller-identity
+```
+
+Install the Session Manager plugin if you will connect from the CLI ([Install the Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html)).
+
+### 3. Configure the same kind of profile on the jump host
+
+After you connect (Quick start below):
+
+```bash
+whoami
+echo "$HOME"
+echo "$AWS_PROFILE"
+```
+
+If `~/.aws/config` on **this** home already has the profile (admin may have pre-seeded it), you only need `awslogin`. Otherwise create `~/.aws/config` under **this** `$HOME` with the same kind of `[profile …]` block (values from your admin—often the same as the laptop, but it is still a separate file on a separate machine).
+
+```bash
+awslogin
+aws sts get-caller-identity
+```
+
+## Typical first-session workflow
+
+1. On your **laptop**: `aws sso login` for your profile; confirm with `aws sts get-caller-identity`.
+2. Connect to the jump host (helper script or console Session Manager).
+3. On the **host**: check `whoami`, `$HOME`, and `$AWS_PROFILE`.
+4. On the **host**: `awslogin`, then `aws sts get-caller-identity` again.
+5. Use on-host tools as needed (`kubelogin`, `log-transfer`, `aws`, …). They use **your** SSO role.
+6. If AWS calls fail later in the session, re-run `awslogin`—do not assume "the box lost its instance role."
 
 ## Quick start (recommended): helper script
 
@@ -46,7 +178,7 @@ The script is Bash (not POSIX `sh`). It works with macOS `/bin/bash` 3.2 and wit
 Set the profile and region your admin told you to use:
 
 ```bash
-export AWS_PROFILE=your-sso-profile-name
+export AWS_PROFILE=your-sso-profile
 export AWS_REGION=us-west-2
 ```
 
@@ -84,14 +216,14 @@ If several instances match, the script prints the candidates and exits; use `--t
 
 ### On the jump host: `awslogin` and `kubelogin`
 
-After you are on the host, two helpers are on `PATH` (`/usr/local/bin`):
+After you are on the host, two helpers are on `PATH` (`/usr/local/bin`). They use the **host** profile from **`AWS_PROFILE`** and your SSO role—**not** the EC2 instance role:
 
 ```bash
 awslogin    # aws sso login --profile "$AWS_PROFILE" --no-browser --use-device-code
 kubelogin   # aws eks update-kubeconfig for this environment's cluster, then kubectl config use-context
 ```
 
-Both read **`AWS_PROFILE`** and **`AWS_REGION`** from the environment (usually set by login defaults). `awslogin` uses the device-code flow because Session Manager has no browser.
+Both read **`AWS_PROFILE`** and **`AWS_REGION`** from the environment (usually set by login defaults on the host). `awslogin` uses the device-code flow because Session Manager has no browser.
 
 `kubelogin` reads the cluster name from **`/etc/jump-host-eks-cluster`** and uses it as `--name`, `--alias`, and the kubectl context. If that file is missing or empty, `kubelogin` exits with an error; `awslogin` still works. Admins set the cluster name with `jump_host_eks_cluster_name` (see `docs/consumer-guide.md`).
 
@@ -103,26 +235,15 @@ Package local files or directories and upload them for browser download via the 
 log-transfer /path/to/file.log ./coredump.dir
 ```
 
-The command prints a short `log-transfer s3:` line with the transfer settings it will use, then an S3 console URL. Open the URL, sign in with SSO if prompted, and download the object. You need an IAM role listed in this environment’s `users.yaml` `iam_role_arns` (that role is allowed to upload and to download). `log-transfer` uses your operator credentials (`AWS_PROFILE` from `awslogin` / login env, or keys you export). It disables the instance metadata service for that upload so the EC2 instance role cannot be used. If you have not logged in, or your role is not in the bucket policy, the upload fails. Archives expire after two years. You need free space on `/home` roughly equal to the zip size while it is being built.
+The command prints a short `log-transfer s3:` line with the transfer settings it will use, then an S3 console URL. Open the URL, sign in with SSO if prompted, and download the object. You need an IAM role listed in this environment’s `users.yaml` `iam_role_arns` (that role is allowed to upload and to download). `log-transfer` uses **your** operator credentials on the jump host (`AWS_PROFILE` from login env / `awslogin`, or keys you export)—**not** the EC2 instance role. If you have not logged in on the host, or your role is not in the bucket policy, the upload fails. Archives expire after two years. You need free space on `/home` roughly equal to the zip size while it is being built.
 
 ### Choosing the Linux (OS) user for the session
 
-Session Manager **Run As** is how AWS picks the account on the instance (instead of the default `ssm-user`). In most organizations the OS user is **not** a free-form CLI choice. AWS resolves it in this order (see [Turn on Run As support for Linux and macOS managed nodes](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-preferences-run-as.html)):
-
-1. **IAM principal tag** `SSMSessionRunAs` on the user or role you use to start the session (recommended for per-person mapping).
-2. Otherwise the **default OS user** in the account’s Session Manager preferences document (for example `run_as_default_user` in this repo’s Terraform-managed document).
-
-So for many jump-host deployments you **do not** pass a Linux user on the command line: your SSO role (or IdP session tags) should already carry `SSMSessionRunAs`, or everyone shares the configured default.
-
-**Why not `aws ssm start-session --parameters` for the OS user?**
-
-For the standard **Standard_Stream** shell Session document, AWS validates `inputs.runAsDefaultUser` as a **literal** username. Placeholder values (for example `{{runAsDefaultUser}}`) are rejected with `InvalidDocumentContent`, and `StartSession` cannot override Run As the way some older examples suggest. Use **`SSMSessionRunAs`** (or your org’s IdP → session tag mapping) instead of trying to pass the Linux user from the CLI.
-
-Optional: `jump-host-ssm.sh connect --document-name <name>` if you use a **different** Session document type (not for arbitrary Run As on the default shell document).
+The [**Which Linux user you land as**](#which-linux-user-you-land-as) table earlier in this guide is what operators need day to day. Session Manager **Run As** is chosen by IAM tag **`SSMSessionRunAs`** on your role (or IdP session tags) or by the account default in Session Manager preferences—not a free-form CLI flag on the standard shell document. Optional: `jump-host-ssm.sh connect --document-name <name>` if your org uses a different Session document. For `InvalidDocumentContent` pitfalls with placeholder Run As values, see `docs/access-model.md`.
 
 ### Shell startup, working directory, and prompt
 
-The Session Manager preferences document sets a **short** `inputs.shellProfile.linux` that **sources** **`/etc/profile.d/jump-host-login-env.sh`** and **`/etc/profile.d/jump-host-path.sh`** when present (managed defaults such as **`AWS_PROFILE`** and **`~/bin` prepended on `PATH`**) for every Run As user, including **`ec2-user`**—before **`cd`** to your home directory and **`exec` interactive bash** (`bash -i`). That matches how Amazon Linux 2023 loads **`/etc/bashrc`**, which in turn sources **`/etc/profile.d/*.sh`**—including the managed environment segment for **`PS1`** in **`/etc/profile.d/zzz-jump-host-prompt.sh`** (installed by Ansible; the `zzz-` prefix makes it run after other `profile.d` snippets that set `PS1`). Your client may print that profile line once when the session starts; that is normal. The prompt label is resolved in order: **`JUMP_HOST_ENVIRONMENT`** if you set it, then **`/etc/jump-host-environment`** (written at configure time from **`--env`** / **`JUMP_HOST_ENVIRONMENT`**, or from the instance’s **`Environment` EC2 tag** when those were not passed), then the **IMDS** tag path when instance metadata tags are enabled on the instance. Settings in your own **`~/.bashrc`** or **`~/.bash_profile`** run later and **override** `PS1` if you customize it. To turn off the managed segment without changing your dotfiles, use either of the following:
+The Session Manager preferences document sets a **short** `inputs.shellProfile.linux` that **sources** **`/etc/profile.d/jump-host-login-env.sh`** and **`/etc/profile.d/jump-host-path.sh`** when present (managed defaults such as **`AWS_PROFILE`** and **`~/bin` prepended on `PATH`**) for every Run As user, including **`ec2-user`**—before **`cd`** to your home directory and **`exec` interactive bash** (`bash -i`). That matches how Amazon Linux 2023 loads **`/etc/bashrc`**, which in turn sources **`/etc/profile.d/*.sh`**—including the managed environment segment for **`PS1`** in **`/etc/profile.d/zzz-jump-host-prompt.sh`** (installed by Ansible; the `zzz-` prefix makes it run after other `profile.d` snippets that set `PS1`). Your client may print that profile line once when the session starts; that is normal. The prompt label is resolved in order: **`JUMP_HOST_ENVIRONMENT`** if you set it, then **`/etc/jump-host-environment`** (written at configure time from **`--env`** / **`JUMP_HOST_ENVIRONMENT`**, or from the instance’s **`Environment` EC2 tag** when those were not passed), then the instance’s **`Environment` EC2 tag** when your admin has enabled instance tags in metadata. Settings in your own **`~/.bashrc`** or **`~/.bash_profile`** run later and **override** `PS1` if you customize it. To turn off the managed segment without changing your dotfiles, use either of the following:
 
 - Create an empty file `~/.jump-host-disable-prompt`, or
 - Set `export JUMP_HOST_DISABLE_PROMPT=1` before the prompt snippet runs (for example early in `~/.bash_profile`).
@@ -154,7 +275,7 @@ Per-host tags from your live config (for example `Role=jump-host`) are merged in
 2. Sign in:
 
    ```bash
-   aws sso login --profile your-sso-profile-name
+   aws sso login --profile your-sso-profile
    ```
 
    A browser window opens; complete authentication with your org’s IdP.
@@ -162,7 +283,7 @@ Per-host tags from your live config (for example `Role=jump-host`) are merged in
 3. Confirm you are using the expected account and role:
 
    ```bash
-   aws sts get-caller-identity --profile your-sso-profile-name
+   aws sts get-caller-identity --profile your-sso-profile
    ```
 
 If `aws sso login` is not applicable (long-lived keys or another credential flow), use the method your organization documents instead; you still need permission for `ssm:StartSession` on tagged jump hosts.
@@ -180,7 +301,7 @@ You need the **instance ID** (`i-...`) in the correct **region**.
 **Option B — AWS CLI:** after SSO (or other credentials) and plugin install:
 
 ```bash
-export AWS_PROFILE=your-sso-profile-name
+export AWS_PROFILE=your-sso-profile
 export AWS_REGION=us-west-2
 aws ssm start-session --target i-0123456789abcdef0
 ```
@@ -192,7 +313,7 @@ aws ec2 describe-instances \
   --filters "Name=tag:JumpHost,Values=true" "Name=instance-state-name,Values=running" \
   --query 'Reservations[].Instances[].[InstanceId,Tags[?Key==`Name`]|[0].Value]' \
   --output table \
-  --profile your-sso-profile-name \
+  --profile your-sso-profile \
   --region us-west-2
 ```
 
@@ -206,10 +327,14 @@ Use the instance id in the first column with `aws ssm start-session --target`. (
 |--------|----------------|
 | `aws: command not found` | Install AWS CLI v2 and ensure it is on `PATH`. |
 | `Session Manager plugin not found` | Install the plugin; restart the terminal. |
-| `Token has expired` / SSO errors | Run `aws sso login --profile ...` again. |
+| Token expired / SSO errors **on your laptop** | Run `aws sso login --profile ...` again. |
+| Token expired / unable to locate credentials **on the host** | Run `awslogin` on the host; confirm `AWS_PROFILE` and that **this** `$HOME/.aws/config` has that profile (laptop config does not apply). |
+| `sts get-caller-identity` shows an instance-role ARN | Operator credentials are missing or unused, so the AWS credential chain fell back to the limited instance role via instance metadata. Check `echo $AWS_PROFILE`, host `~/.aws/config`, and re-run `awslogin`. |
+| Fixed laptop `~/.aws` but host tools still fail | Laptop and host configs are separate; configure or seed the profile under the host Linux user’s home. |
+| Unexpected `whoami` / `$HOME` | This environment may use shared `ec2-user` vs per-user Run As; your host `~/.aws` follows that home. Ask your admin which model is in use. |
+| Shared `ec2-user` and SSO token reuse concerns | Prefer per-user Run As. Under shared `ec2-user`, `awslogin` caches tokens in a home other sessions can read. See the shared-user warning above and [issue #20](https://github.com/benvon/aws-jump-host/issues/20). |
 | `AccessDeniedException` on `start-session` | IAM: role needs SSM permissions and ABAC/tag conditions must match the instance (`JumpHost`, `AccessProfile`). See `docs/security-user-prerequisites.md`. |
-| `log-transfer` fails with AccessDenied or “Unable to locate credentials” | The instance role cannot upload. Run `awslogin`, confirm `AWS_PROFILE`, and ensure your role is in this environment’s `users.yaml` `iam_role_arns`. |
-| SSM connects but wrong Linux user | Run As is set by IAM tag `SSMSessionRunAs` (or IdP session tags) or the account default in Session Manager preferences—not via a CLI flag on the standard shell document. |
+| `log-transfer` fails with AccessDenied or “Unable to locate credentials” | Instance role cannot upload. Run `awslogin`, confirm `AWS_PROFILE`, and ensure your role is in this environment’s `users.yaml` `iam_role_arns`. |
 | Script lists no hosts | Wrong account, region, or tags; confirm `JumpHost=true` and instance is **running**. |
 | SSM or **Ansible** (`aws_ssm`) sessions drop or hang after editing `shellProfile.linux` | `terraform apply` the `ssm-self-management` stack to restore the repo default (`. /etc/profile.d/jump-host-login-env.sh 2>/dev/null || true; . /etc/profile.d/jump-host-path.sh 2>/dev/null || true; cd $HOME; exec bash -i`), or set `linux_shell_profile = ""` in that stack for stock `/bin/sh` while troubleshooting. |
 
@@ -219,4 +344,6 @@ Use the instance id in the first column with `aws ssm start-session --target`. (
 
 - IAM / Session Manager requirements for security teams: `docs/security-user-prerequisites.md`
 - Architecture (SSM-only instance role): `docs/architecture.md`
-- How this repo applies baseline AWS tags: `docs/consumer-guide.md` (Global AWS tags)
+- Access model and Run As ownership: `docs/access-model.md`
+- How admins configure login env and helpers: `docs/consumer-guide.md`
+- Shared-user `awslogin` SSO cache isolation (planned): [issue #20](https://github.com/benvon/aws-jump-host/issues/20)

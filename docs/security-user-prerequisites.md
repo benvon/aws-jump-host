@@ -19,6 +19,8 @@ Security/IAM teams are responsible for identity, IAM authorization, and Session 
 
 The jump-host **EC2 instance role is intentionally without significant privileges** (SSM agent and interactive sessions only). Operator permission sets must include any environment actions the person will run from the host (for example S3 for `log-transfer`, EKS for `kubelogin`). Do not plan on the instance profile as a shared credential for those tools.
 
+For operators learning SSO login, profiles, and why the instance role is not used on the host, see `docs/jump-host-end-user-guide.md`.
+
 If central management is not available yet, this repository can temporarily self-manage the required Session Manager settings via Terraform/Terragrunt (`ssm-self-management` stack) using `scripts/orchestrate.sh --ssm-self-management`.
 
 The same `ssm-self-management` stack can also self-manage a role allowlist by attaching inline IAM policies to explicitly listed IAM role ARNs.

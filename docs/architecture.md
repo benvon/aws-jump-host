@@ -15,6 +15,7 @@ The resulting platform provisions private jump hosts reachable through AWS Sessi
 
 - EC2 metadata service requires IMDSv2 tokens.
 - **Jump-host instance IAM is SSM-only by design.** The EC2 instance is intentionally without significant role privileges: the instance role covers SSM agent operation and interactive Session Manager sessions, and nothing else in the environment (no S3, EKS, or other AWS API rights). Operators bring their own Identity Center / IAM credentials into the session (`AWS_PROFILE` or exported keys) for tools such as `log-transfer`, `awslogin`, and `kubelogin`. The helper disables IMDS so those tools cannot fall back to the instance profile.
+  - Operator guide: `docs/jump-host-end-user-guide.md`.
 - Session logging is expected in CloudWatch and validated pre-apply.
 - Access control remains centrally managed in IAM Identity Center, integrated via deterministic instance tags.
 - Local user accounts have locked passwords and no SSH key provisioning by default.
