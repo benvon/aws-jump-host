@@ -115,6 +115,36 @@ install_fake_aws() {
   printf '%q ' "$@"
   printf '\n'
 } >>"${AWS_LOG}"
+if [[ "${1:-}" == sso && "${2:-}" == login ]]; then
+  # Fail if the active config lacks sso_* for --profile (catches stripped session config).
+  profile=""
+  prev=""
+  for arg in "$@"; do
+    if [[ "$prev" == --profile ]]; then
+      profile="$arg"
+    fi
+    prev="$arg"
+  done
+  cfg="${AWS_CONFIG_FILE:-${HOME}/.aws/config}"
+  if [[ -z "$profile" ]]; then
+    echo "Error: sso login missing --profile" >&2
+    exit 1
+  fi
+  if [[ "$profile" == "default" ]]; then
+    target="[default]"
+  else
+    target="[profile ${profile}]"
+  fi
+  if [[ ! -r "$cfg" ]] || ! awk -v target="$target" '
+    /^\[/ { in_target = ($0 == target); next }
+    in_target && /^[[:space:]]*sso_/ { found = 1; exit }
+    END { exit !found }
+  ' "$cfg"; then
+    echo "Error: profile ${profile} lacks sso_* in ${cfg}" >&2
+    exit 1
+  fi
+  exit 0
+fi
 if [[ "${1:-}" == configure && "${2:-}" == export-credentials ]]; then
   for arg in "$@"; do
     if [[ "$arg" == env-no-export ]]; then
@@ -168,6 +198,70 @@ EOF
   grep -q 'ASIATESTACCESS' "$AWS_SHARED_CREDENTIALS_FILE"
   grep -q '\[jump-sso\]' "$AWS_SHARED_CREDENTIALS_FILE"
   ! grep -q 'sso_start_url' "$AWS_CONFIG_FILE"
+  grep -q 'region = us-west-2' "$AWS_CONFIG_FILE"
+  [[ "$(cksum "$HOME_DIR/.aws/config")" == "$durable_before" ]]
+  grep -q 'sso_start_url' "$HOME_DIR/.aws/config"
+}
+
+@test "awslogin can re-login in same session after SSO was stripped" {
+  install_id_stub ec2-user
+  install_fake_aws
+  eval "$(source_session_exports)"
+  export AWS_PROFILE=jump-sso
+  durable_before="$(cksum "$HOME_DIR/.aws/config")"
+
+  run "$AWSLOGIN"
+  echo "first status=$status output=$output log=$(cat "$AWS_LOG")"
+  [[ "$status" -eq 0 ]]
+  [[ -s "$AWS_SHARED_CREDENTIALS_FILE" ]]
+  ! grep -q 'sso_start_url' "$AWS_CONFIG_FILE"
+  [[ "$(cksum "$HOME_DIR/.aws/config")" == "$durable_before" ]]
+
+  : >"$AWS_LOG"
+  run "$AWSLOGIN"
+  echo "second status=$status output=$output log=$(cat "$AWS_LOG")"
+  [[ "$status" -eq 0 ]]
+  grep -q 'sso login' "$AWS_LOG"
+  grep -q 'export-credentials' "$AWS_LOG"
+  [[ -s "$AWS_SHARED_CREDENTIALS_FILE" ]]
+  grep -q 'ASIATESTACCESS' "$AWS_SHARED_CREDENTIALS_FILE"
+  grep -q '\[jump-sso\]' "$AWS_SHARED_CREDENTIALS_FILE"
+  ! grep -q 'sso_start_url' "$AWS_CONFIG_FILE"
+  grep -q 'region = us-west-2' "$AWS_CONFIG_FILE"
+  [[ "$(cksum "$HOME_DIR/.aws/config")" == "$durable_before" ]]
+  grep -q 'sso_start_url' "$HOME_DIR/.aws/config"
+}
+
+@test "awslogin strips sso_* from [default] profile section" {
+  cat >"$HOME_DIR/.aws/config" <<'EOF'
+[default]
+sso_start_url = https://example.awsapps.com/start
+sso_region = us-west-2
+sso_account_id = 123456789012
+sso_role_name = YourPermissionSet
+region = us-west-2
+EOF
+  install_id_stub ec2-user
+  install_fake_aws
+  eval "$(source_session_exports)"
+  export AWS_PROFILE=default
+  durable_before="$(cksum "$HOME_DIR/.aws/config")"
+  run "$AWSLOGIN"
+  echo "status=$status output=$output log=$(cat "$AWS_LOG")"
+  [[ "$status" -eq 0 ]]
+  grep -q 'sso login' "$AWS_LOG"
+  grep -q 'export-credentials' "$AWS_LOG"
+  [[ -s "$AWS_SHARED_CREDENTIALS_FILE" ]]
+  grep -q 'ASIATESTACCESS' "$AWS_SHARED_CREDENTIALS_FILE"
+  grep -q '\[default\]' "$AWS_SHARED_CREDENTIALS_FILE"
+  # Session [default] must have no sso_* / credential_process; region retained.
+  awk '
+    /^\[default\]/ { in_def = 1; next }
+    /^\[/ { in_def = 0 }
+    in_def && /^[[:space:]]*sso_/ { bad = 1 }
+    in_def && /^[[:space:]]*credential_process[[:space:]]*=/ { bad = 1 }
+    END { exit bad + 0 }
+  ' "$AWS_CONFIG_FILE"
   grep -q 'region = us-west-2' "$AWS_CONFIG_FILE"
   [[ "$(cksum "$HOME_DIR/.aws/config")" == "$durable_before" ]]
   grep -q 'sso_start_url' "$HOME_DIR/.aws/config"
