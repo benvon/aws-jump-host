@@ -103,3 +103,72 @@ source_session_exports() {
   rm -f "$marker_file"
   ! [[ -d "$marker" ]]
 }
+
+install_fake_aws() {
+  cat >"$FAKE_BIN/aws" <<'EOF'
+#!/usr/bin/env bash
+{
+  echo "HOME=${HOME-<unset>}"
+  echo "CONFIG_FILE=${AWS_CONFIG_FILE-<unset>}"
+  echo "CREDS_FILE=${AWS_SHARED_CREDENTIALS_FILE-<unset>}"
+  printf 'ARGS '
+  printf '%q ' "$@"
+  printf '\n'
+} >>"${AWS_LOG}"
+if [[ "${1:-}" == configure && "${2:-}" == export-credentials ]]; then
+  for arg in "$@"; do
+    if [[ "$arg" == env-no-export ]]; then
+      cat <<'ENV'
+AWS_ACCESS_KEY_ID=ASIATESTACCESS
+AWS_SECRET_ACCESS_KEY=testsecret
+AWS_SESSION_TOKEN=testsession
+ENV
+      exit 0
+    fi
+  done
+  cat <<'JSON'
+{
+  "Version": 1,
+  "AccessKeyId": "ASIATESTACCESS",
+  "SecretAccessKey": "testsecret",
+  "SessionToken": "testsession",
+  "Expiration": "2099-01-01T00:00:00Z"
+}
+JSON
+  exit 0
+fi
+exit 0
+EOF
+  chmod +x "$FAKE_BIN/aws"
+}
+
+@test "awslogin without session env keeps device-code SSO login only" {
+  install_fake_aws
+  export AWS_PROFILE=jump-sso
+  unset JUMP_HOST_AWS_HOME AWS_CONFIG_FILE AWS_SHARED_CREDENTIALS_FILE
+  run "$AWSLOGIN"
+  [[ "$status" -eq 0 ]]
+  grep -q 'sso login' "$AWS_LOG"
+  ! grep -q 'export-credentials' "$AWS_LOG"
+}
+
+@test "awslogin with session env logs in under session HOME and writes credentials" {
+  install_id_stub ec2-user
+  install_fake_aws
+  eval "$(source_session_exports)"
+  export AWS_PROFILE=jump-sso
+  durable_before="$(cksum "$HOME_DIR/.aws/config")"
+  run "$AWSLOGIN"
+  echo "status=$status output=$output log=$(cat "$AWS_LOG")"
+  [[ "$status" -eq 0 ]]
+  grep -q 'sso login' "$AWS_LOG"
+  grep -q 'export-credentials' "$AWS_LOG"
+  grep -q "HOME=${JUMP_HOST_AWS_HOME}" "$AWS_LOG"
+  [[ -s "$AWS_SHARED_CREDENTIALS_FILE" ]]
+  grep -q 'ASIATESTACCESS' "$AWS_SHARED_CREDENTIALS_FILE"
+  grep -q '\[jump-sso\]' "$AWS_SHARED_CREDENTIALS_FILE"
+  ! grep -q 'sso_start_url' "$AWS_CONFIG_FILE"
+  grep -q 'region = us-west-2' "$AWS_CONFIG_FILE"
+  [[ "$(cksum "$HOME_DIR/.aws/config")" == "$durable_before" ]]
+  grep -q 'sso_start_url' "$HOME_DIR/.aws/config"
+}

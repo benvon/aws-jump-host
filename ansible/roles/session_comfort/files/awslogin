@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # Jump-host helper: SSO login with device code (no browser; SSM sessions have none).
+# When JUMP_HOST_AWS_HOME is set (shared-user session isolation), cache SSO under the
+# session tree, export short-lived keys into AWS_SHARED_CREDENTIALS_FILE, and strip
+# sso_* from the session AWS_CONFIG_FILE only.
 set -euo pipefail
 
 die() {
@@ -9,7 +12,75 @@ die() {
 
 profile="${AWS_PROFILE:-}"
 [[ -n "$profile" ]] || die "AWS_PROFILE is not set. Export AWS_PROFILE (typically via jump_host_login_env)."
-
 command -v aws >/dev/null 2>&1 || die "aws CLI not found on PATH."
 
-exec aws sso login --profile "$profile" --no-browser --use-device-code
+require_safe_profile() {
+  [[ "$1" =~ ^[A-Za-z0-9._-]+$ ]] || die "Unsafe AWS profile name."
+}
+require_safe_profile "$profile"
+
+strip_sso_from_session_profile() {
+  local cfg="$1" prof="$2" out
+  out="$(mktemp)"
+  # shellcheck disable=SC2016
+  awk -v prof="$prof" '
+    BEGIN { target = "[profile " prof "]"; in_target = 0 }
+    /^\[/ {
+      in_target = ($0 == target)
+      print
+      next
+    }
+    in_target {
+      if ($0 ~ /^[[:space:]]*sso_/) next
+      if ($0 ~ /^[[:space:]]*credential_process[[:space:]]*=/) next
+    }
+    { print }
+  ' "$cfg" >"$out"
+  mv "$out" "$cfg"
+  chmod 600 "$cfg"
+}
+
+if [[ -z "${JUMP_HOST_AWS_HOME:-}" ]]; then
+  exec aws sso login --profile "$profile" --no-browser --use-device-code
+fi
+
+# Session isolation path (shared ec2-user).
+session_home="$JUMP_HOST_AWS_HOME"
+session_cfg="${AWS_CONFIG_FILE:-$session_home/.aws/config}"
+session_creds="${AWS_SHARED_CREDENTIALS_FILE:-$session_home/.aws/credentials}"
+mkdir -p "${session_home}/.aws/sso/cache"
+
+if [[ ! -s "$session_cfg" ]]; then
+  if [[ -r "${HOME}/.aws/config" ]]; then
+    cp "${HOME}/.aws/config" "$session_cfg"
+    chmod 600 "$session_cfg"
+  else
+    die "No AWS config in session tree or durable ~/.aws/config."
+  fi
+fi
+
+HOME="$session_home" aws sso login --profile "$profile" --no-browser --use-device-code
+
+ak=""
+sk=""
+tok=""
+while IFS= read -r line || [[ -n "$line" ]]; do
+  case "$line" in
+    AWS_ACCESS_KEY_ID=*) ak="${line#AWS_ACCESS_KEY_ID=}" ;;
+    AWS_SECRET_ACCESS_KEY=*) sk="${line#AWS_SECRET_ACCESS_KEY=}" ;;
+    AWS_SESSION_TOKEN=*) tok="${line#AWS_SESSION_TOKEN=}" ;;
+  esac
+done < <(HOME="$session_home" aws configure export-credentials --profile "$profile" --format env-no-export)
+[[ -n "$ak" && -n "$sk" ]] || die "export-credentials did not return access keys."
+{
+  printf '[%s]\n' "$profile"
+  printf 'aws_access_key_id = %s\n' "$ak"
+  printf 'aws_secret_access_key = %s\n' "$sk"
+  if [[ -n "$tok" ]]; then
+    printf 'aws_session_token = %s\n' "$tok"
+  fi
+} >"$session_creds"
+chmod 600 "$session_creds"
+strip_sso_from_session_profile "$session_cfg" "$profile"
+
+echo "Session credentials ready for profile ${profile}. Re-run awslogin when they expire." >&2
