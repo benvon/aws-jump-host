@@ -74,6 +74,7 @@ source_session_exports() {
     export HOME=\"$HOME_DIR\"
     export PATH=\"$FAKE_BIN:\${PATH}\"
     unset JUMP_HOST_AWS_HOME JUMP_HOST_AWS_SESSION_ID AWS_CONFIG_FILE AWS_SHARED_CREDENTIALS_FILE AWS_PROFILE
+    before_umask=\$(umask)
     source \"$SESSION_SH\"
     [[ -n \"\${JUMP_HOST_AWS_HOME:-}\" ]]
     [[ -n \"\${JUMP_HOST_AWS_SESSION_ID:-}\" ]]
@@ -81,8 +82,13 @@ source_session_exports() {
     [[ \"\$AWS_SHARED_CREDENTIALS_FILE\" == \"\$JUMP_HOST_AWS_HOME/.aws/credentials\" ]]
     [[ -f \"\$AWS_CONFIG_FILE\" ]]
     grep -q 'sso_start_url' \"\$AWS_CONFIG_FILE\"
-    mode=\$(stat -f '%Lp' \"\$JUMP_HOST_AWS_HOME\" 2>/dev/null || stat -c '%a' \"\$JUMP_HOST_AWS_HOME\")
+    if stat --version >/dev/null 2>&1; then
+      mode=\$(stat -c '%a' \"\$JUMP_HOST_AWS_HOME\")
+    else
+      mode=\$(stat -f '%Lp' \"\$JUMP_HOST_AWS_HOME\")
+    fi
     [[ \"\$mode\" == '700' ]]
+    [[ \"\$(umask)\" == \"\$before_umask\" ]]
     trap - EXIT
   "
 }

@@ -1,6 +1,8 @@
 # Jump-host AWS session isolation for shared Run As users (ec2-user).
 # Installed as /etc/profile.d/jump-host-aws-session.sh
 # shellcheck shell=bash
+# SC2317: return||exit is intentional — profile.d is sourced; exit covers accidental direct run.
+# shellcheck disable=SC2317
 
 # Only interactive shells; avoid breaking scp/non-interactive.
 case "$-" in
@@ -24,11 +26,14 @@ if [[ -z "${HOME:-}" ]]; then
   return 0 2>/dev/null || exit 0
 fi
 
+# Tighten creation mode for the session tree only; restore afterward (this file is sourced).
+_jh_aws_old_umask="$(umask)"
 umask 077
 
 _jh_aws_root="${HOME}/.cache/jump-host-aws"
 if ! mkdir -p "$_jh_aws_root"; then
-  unset _jh_aws_root
+  umask "$_jh_aws_old_umask"
+  unset _jh_aws_root _jh_aws_old_umask
   return 0 2>/dev/null || exit 0
 fi
 
@@ -42,12 +47,14 @@ _jh_aws_home="${_jh_aws_root}/${_jh_aws_session_id}"
 
 # Create the session tree before exporting; on failure leave env unset.
 if ! mkdir -p "${_jh_aws_home}/.aws/sso/cache"; then
-  unset _jh_aws_root _jh_aws_session_id _jh_aws_home
+  umask "$_jh_aws_old_umask"
+  unset _jh_aws_root _jh_aws_session_id _jh_aws_home _jh_aws_old_umask
   return 0 2>/dev/null || exit 0
 fi
 if ! chmod 700 "$_jh_aws_home"; then
   rm -rf "$_jh_aws_home" 2>/dev/null || true
-  unset _jh_aws_root _jh_aws_session_id _jh_aws_home
+  umask "$_jh_aws_old_umask"
+  unset _jh_aws_root _jh_aws_session_id _jh_aws_home _jh_aws_old_umask
   return 0 2>/dev/null || exit 0
 fi
 
@@ -60,6 +67,9 @@ else
 fi
 : >"${_jh_aws_home}/.aws/credentials"
 chmod 600 "${_jh_aws_home}/.aws/credentials"
+
+umask "$_jh_aws_old_umask"
+unset _jh_aws_old_umask
 
 export JUMP_HOST_AWS_SESSION_ID="$_jh_aws_session_id"
 export JUMP_HOST_AWS_HOME="$_jh_aws_home"
