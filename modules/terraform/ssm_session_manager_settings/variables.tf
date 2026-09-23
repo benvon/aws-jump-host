@@ -29,7 +29,7 @@ variable "run_as_default_user" {
 }
 
 variable "linux_shell_profile" {
-  description = "Session Manager inputs.shellProfile.linux (POSIX sh, max 512 characters). null uses the module default: source jump-host-login-env and jump-host-path profile.d snippets (POSIX-safe PATH script prepends ~/bin when HOME is set) then cd to $HOME and exec bash --rcfile /etc/jump-host-ssm-bashrc -i (rcfile sources AWS session isolation then ~/.bashrc). Set to \"\" for stock /bin/sh only (no automatic cd/bash)."
+  description = "Session Manager inputs.shellProfile.linux (POSIX sh, max 512 characters). null uses the module default: source jump-host-login-env and jump-host-path profile.d snippets (POSIX-safe PATH script prepends ~/bin when HOME is set) then cd to $HOME and exec bash --rcfile /etc/jump-host-ssm-bashrc -i when that file exists (rcfile sources AWS session isolation then ~/.bashrc), otherwise exec bash -i. Set to \"\" for stock /bin/sh only (no automatic cd/bash)."
   type        = string
   default     = null
   nullable    = true
