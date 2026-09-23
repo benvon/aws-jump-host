@@ -1,0 +1,19 @@
+# Ansible managed — SSM Standard_Stream interactive bash entrypoint.
+# Used as `bash --rcfile /etc/jump-host-ssm-bashrc -i` from Session Manager shellProfile
+# so shared-user AWS session isolation always runs before the rest of interactive startup.
+# shellcheck shell=bash
+
+# Session isolation first (no-op unless Linux user is ec2-user).
+if [ -r /etc/profile.d/jump-host-aws-session.sh ]; then
+  # shellcheck source=/dev/null
+  . /etc/profile.d/jump-host-aws-session.sh
+fi
+
+# Then the normal interactive startup chain (~/.bashrc sources /etc/bashrc → profile.d).
+if [ -n "${HOME:-}" ] && [ -f "${HOME}/.bashrc" ]; then
+  # shellcheck source=/dev/null
+  . "${HOME}/.bashrc"
+elif [ -f /etc/bashrc ]; then
+  # shellcheck source=/dev/null
+  . /etc/bashrc
+fi

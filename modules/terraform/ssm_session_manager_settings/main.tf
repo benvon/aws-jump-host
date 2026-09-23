@@ -39,9 +39,10 @@ locals {
 
   # Source managed login exports and PATH snippet before bash so defaults apply for every Run As user
   # (e.g. AWS_PROFILE, ~/bin on PATH), including ec2-user. POSIX sh snippet (.profile.d path) must stay sh-safe.
-  # bash -i still loads /etc/bashrc → profile.d on AL2023 (duplicate sourcing is idempotent).
+  # Use bash --rcfile so /etc/jump-host-ssm-bashrc can source jump-host-aws-session.sh before bashrc
+  # (plain bash -i + profile.d alone was unreliable for JUMP_HOST_AWS_HOME under Session Manager).
   # Avoid bash -l here — it dropped Standard_Stream sessions in testing.
-  default_linux_shell_profile = ". /etc/profile.d/jump-host-login-env.sh 2>/dev/null || true; . /etc/profile.d/jump-host-path.sh 2>/dev/null || true; cd \"$${HOME:-/}\"; exec /bin/bash -i"
+  default_linux_shell_profile = ". /etc/profile.d/jump-host-login-env.sh 2>/dev/null || true; . /etc/profile.d/jump-host-path.sh 2>/dev/null || true; cd \"$${HOME:-/}\"; exec /bin/bash --rcfile /etc/jump-host-ssm-bashrc -i"
 
   linux_shell_profile_effective = var.linux_shell_profile == null ? local.default_linux_shell_profile : var.linux_shell_profile
 

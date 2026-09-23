@@ -93,6 +93,52 @@ source_session_exports() {
   "
 }
 
+@test "profile.d resolves HOME via getent when unset for ec2-user" {
+  install_id_stub ec2-user
+  cat >"$FAKE_BIN/getent" <<EOF
+#!/usr/bin/env bash
+[[ "\$1" == passwd && "\$2" == ec2-user ]] || exit 1
+printf 'ec2-user:x:1000:1000::%s:/bin/bash\\n' "$HOME_DIR"
+EOF
+  chmod +x "$FAKE_BIN/getent"
+  bash -ic "
+    set -e
+    unset HOME
+    export PATH=\"$FAKE_BIN:\${PATH}\"
+    unset JUMP_HOST_AWS_HOME JUMP_HOST_AWS_SESSION_ID AWS_CONFIG_FILE AWS_SHARED_CREDENTIALS_FILE AWS_PROFILE
+    source \"$SESSION_SH\"
+    [[ -n \"\${HOME:-}\" ]]
+    [[ -n \"\${JUMP_HOST_AWS_HOME:-}\" ]]
+    [[ \"\$JUMP_HOST_AWS_HOME\" == \"\$HOME/.cache/jump-host-aws/\"* ]]
+    trap - EXIT
+  "
+}
+
+@test "SSM bash rcfile sources session isolation then continues" {
+  install_id_stub ec2-user
+  rcfile="$(cd "$(dirname "$SESSION_SH")" && pwd)/jump-host-ssm-bashrc"
+  etc_dir="$(mktemp -d)"
+  mkdir -p "$etc_dir/profile.d"
+  cp "$SESSION_SH" "$etc_dir/profile.d/jump-host-aws-session.sh"
+  cat >"$etc_dir/bashrc" <<'EOF'
+export JUMP_HOST_TEST_BASHRC=1
+EOF
+  sed -e "s|/etc/profile.d/jump-host-aws-session.sh|$etc_dir/profile.d/jump-host-aws-session.sh|" \
+      -e "s|/etc/bashrc|$etc_dir/bashrc|" \
+      -e "s|\"\${HOME}/.bashrc\"|$etc_dir/no-user-bashrc|" \
+      -e "s|\"\${HOME:-}/.bashrc\"|$etc_dir/no-user-bashrc|" \
+      "$rcfile" >"$etc_dir/jump-host-ssm-bashrc"
+  # rcfile runs before -c; export HOME/PATH for the child bash startup.
+  HOME="$HOME_DIR" PATH="$FAKE_BIN:$PATH" \
+    bash --rcfile "$etc_dir/jump-host-ssm-bashrc" -ic '
+      set -e
+      [[ -n "${JUMP_HOST_AWS_HOME:-}" ]]
+      [[ "${JUMP_HOST_TEST_BASHRC:-}" == 1 ]]
+      trap - EXIT
+    '
+  rm -rf "$etc_dir"
+}
+
 @test "profile.d EXIT trap removes the session directory for ec2-user" {
   install_id_stub ec2-user
   marker_file="$(mktemp)"
