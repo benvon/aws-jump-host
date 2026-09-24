@@ -104,13 +104,29 @@ EOF
   bash -ic "
     set -e
     unset HOME
+    cd /
     export PATH=\"$FAKE_BIN:\${PATH}\"
     unset JUMP_HOST_AWS_HOME JUMP_HOST_AWS_SESSION_ID AWS_CONFIG_FILE AWS_SHARED_CREDENTIALS_FILE AWS_PROFILE
     source \"$SESSION_SH\"
     [[ -n \"\${HOME:-}\" ]]
+    [[ \"\$PWD\" == \"\$HOME\" ]]
     [[ -n \"\${JUMP_HOST_AWS_HOME:-}\" ]]
     [[ \"\$JUMP_HOST_AWS_HOME\" == \"\$HOME/.cache/jump-host-aws/\"* ]]
     trap - EXIT
+  "
+}
+
+@test "profile.d is a no-op for noninteractive ec2-user shells" {
+  install_id_stub ec2-user
+  # Noninteractive (no -i): must not redirect AWS_* even if stdout is a tty.
+  bash -c "
+    set -e
+    export HOME=\"$HOME_DIR\"
+    export PATH=\"$FAKE_BIN:\${PATH}\"
+    unset JUMP_HOST_AWS_HOME JUMP_HOST_AWS_SESSION_ID AWS_CONFIG_FILE AWS_SHARED_CREDENTIALS_FILE AWS_PROFILE
+    source \"$SESSION_SH\"
+    [[ -z \"\${JUMP_HOST_AWS_HOME:-}\" ]]
+    [[ -z \"\${AWS_CONFIG_FILE:-}\" ]]
   "
 }
 

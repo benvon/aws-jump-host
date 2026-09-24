@@ -6,15 +6,11 @@
 # SC2317: return||exit is intentional — profile.d is sourced; exit covers accidental direct run.
 # shellcheck disable=SC2317
 
-# Only interactive (or tty-backed) shells; avoid breaking scp/non-interactive.
+# Only interactive shells (SSM uses bash -i / --rcfile … -i). Skip noninteractive
+# so bash -lc / ssh -t automation keeps durable ~/.aws credential lookup.
 case "$-" in
   *i*) ;;
-  *)
-    # SSM/bash --rcfile edge: stdin may not be a tty yet; stdout often is.
-    if [[ ! -t 1 ]]; then
-      return 0 2>/dev/null || exit 0
-    fi
-    ;;
+  *) return 0 2>/dev/null || exit 0 ;;
 esac
 
 _jh_aws_user="$(id -un 2>/dev/null || true)"
@@ -24,6 +20,7 @@ if [[ "$_jh_aws_user" != ec2-user ]]; then
 fi
 
 # SSM occasionally starts bash before pam/sshd has exported HOME. Resolve it.
+# shellProfile may already have cd'd to / when HOME was unset; land in real HOME.
 if [[ -z "${HOME:-}" ]]; then
   _jh_aws_pw="$(getent passwd "$_jh_aws_user" 2>/dev/null || true)"
   HOME="$(printf '%s' "$_jh_aws_pw" | cut -d: -f6)"
@@ -33,6 +30,7 @@ if [[ -z "${HOME:-}" ]]; then
     return 0 2>/dev/null || exit 0
   fi
   export HOME
+  cd "$HOME" 2>/dev/null || true
 fi
 unset _jh_aws_user
 
