@@ -150,6 +150,14 @@
     group: root
     mode: "0644"
 
+- name: Install SSM bash rcfile that sources AWS session isolation before bashrc
+  ansible.builtin.copy:
+    src: jump-host-ssm-bashrc
+    dest: /etc/jump-host-ssm-bashrc
+    owner: root
+    group: root
+    mode: "0644"
+
 - name: Install jump host profile.d login environment defaults
   ansible.builtin.template:
     src: jump-host-login-env.sh.j2

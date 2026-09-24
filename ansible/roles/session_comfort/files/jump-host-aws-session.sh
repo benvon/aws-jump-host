@@ -1,10 +1,13 @@
 # Jump-host AWS session isolation for shared Run As users (ec2-user).
 # Installed as /etc/profile.d/jump-host-aws-session.sh
+# Also sourced from /etc/jump-host-ssm-bashrc (SSM bash --rcfile) so Session Manager
+# sessions get JUMP_HOST_AWS_HOME even when profile.d timing is unreliable.
 # shellcheck shell=bash
 # SC2317: return||exit is intentional — profile.d is sourced; exit covers accidental direct run.
 # shellcheck disable=SC2317
 
-# Only interactive shells; avoid breaking scp/non-interactive.
+# Only interactive shells (SSM uses bash -i / --rcfile … -i). Skip noninteractive
+# so bash -lc / ssh -t automation keeps durable ~/.aws credential lookup.
 case "$-" in
   *i*) ;;
   *) return 0 2>/dev/null || exit 0 ;;
@@ -15,14 +18,24 @@ if [[ "$_jh_aws_user" != ec2-user ]]; then
   unset _jh_aws_user
   return 0 2>/dev/null || exit 0
 fi
+
+# SSM occasionally starts bash before pam/sshd has exported HOME. Resolve it.
+# shellProfile may already have cd'd to / when HOME was unset; land in real HOME.
+if [[ -z "${HOME:-}" ]]; then
+  _jh_aws_pw="$(getent passwd "$_jh_aws_user" 2>/dev/null || true)"
+  HOME="$(printf '%s' "$_jh_aws_pw" | cut -d: -f6)"
+  unset _jh_aws_pw
+  if [[ -z "$HOME" ]]; then
+    unset _jh_aws_user
+    return 0 2>/dev/null || exit 0
+  fi
+  export HOME
+  cd "$HOME" 2>/dev/null || true
+fi
 unset _jh_aws_user
 
 # Already initialized in this shell (nested source).
 if [[ -n "${JUMP_HOST_AWS_HOME:-}" ]]; then
-  return 0 2>/dev/null || exit 0
-fi
-
-if [[ -z "${HOME:-}" ]]; then
   return 0 2>/dev/null || exit 0
 fi
 
