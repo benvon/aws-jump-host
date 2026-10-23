@@ -110,7 +110,6 @@ env_name=""
 subenv_name=""
 aws_region=""
 users_vars=""
-auto_approve="false"
 noninteractive="false"
 ssm_self_management="false"
 
@@ -137,7 +136,6 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --auto-approve|--non-interactive)
-      auto_approve="true"
       noninteractive="true"
       shift
       ;;
