@@ -116,13 +116,15 @@ For host configuration changes that do not recreate jump hosts (for example user
 
 - `./scripts/orchestrate.sh configure --live-dir ...`
 
-`configure` applies the `log-transfer` stack (so bucket-policy upload and download grants match `users[].iam_role_arns`) and then runs Ansible. Other stacks are not applied. Use `--auto-approve` for non-interactive runs. Users with `state: absent` are omitted from the bucket policy.
+plan and configure require an already-applied observability stack, compliant Session Manager preferences, the expected CloudWatch log group, and existing log-transfer outputs. A new account uses apply first. Use apply --ssm-self-management when this account must create the Session Manager preferences. --ssm-self-management on plan only adds a read-only plan of that stack.
+
+`configure` applies the `log-transfer` stack (so bucket-policy upload and download grants match `users[].iam_role_arns`) and then runs Ansible. Other stacks are not applied. Use `--non-interactive` or `--auto-approve` for non-interactive runs. Users with `state: absent` are omitted from the bucket policy.
 
 For teardown:
 
-- `./scripts/orchestrate.sh destroy --live-dir ...` (interactive by default; use `--auto-approve` only for automation)
+- `./scripts/orchestrate.sh destroy --live-dir ...` (interactive by default; use `--non-interactive` or `--auto-approve` for automation)
 
-Non-interactive CI or scripted applies should append `--auto-approve` to both `apply` and `destroy`. The Makefile provides `apply-example-auto` and `destroy-example-auto` for the bundled examples.
+CD passes `--non-interactive` to `apply`, `configure`, and `destroy`. `--auto-approve` remains an equivalent approval flag. The Makefile provides `apply-example-auto` and `destroy-example-auto` for the bundled examples.
 
 ## User Schema Contract
 
@@ -165,7 +167,7 @@ Per-environment jump-host login helpers (`/usr/local/bin/awslogin`, `/usr/local/
 Per-environment `log-transfer` (S3 bucket + `/usr/local/bin/log-transfer`) needs:
 
 - `users[].iam_role_arns` from the same extra-vars file as Ansible (`--users-vars`). `orchestrate.sh` exports that path as `JUMP_HOST_USERS_VARS` (and `JUMP_HOST_ORCHESTRATE=1`) so the `log-transfer` stack’s bucket policy matches the operators you provision. Omitting `--users-vars` is `users: []` for both Ansible and the bucket policy; a leftover `JUMP_HOST_USERS_VARS` or ancestor `ansible/users.yaml` is not used. Users with `state: absent` are omitted. A missing, unreadable, or schema-invalid selected users file fails closed before Terraform runs. `scripts/validate_users_vars.py` is the policy helper for orchestrate, Terragrunt (`--print-downloader-arns`), and Ansible `user_accounts`: Linux usernames, unique names, list types, present-vs-null keys, and omitting `state: absent` from download ARNs. Direct Terragrunt uses that helper (a present key with YAML null is defined, not omitted). If you run Terragrunt directly, set `JUMP_HOST_USERS_VARS` or keep `ansible/users.yaml` as an ancestor of the stack. From an external live repo, also set `JUMP_HOST_USERS_VALIDATOR` to this repository’s `scripts/validate_users_vars.py` (`orchestrate.sh` exports that path automatically). Identity Center reserved roles are not mutated. Opening the printed S3 console URL uses the operator’s existing SSO/IAM identity; this module cannot grant account-level `s3:ListAllMyBuckets` on a bucket policy, and it does not attach identity policies to reserved SSO roles. `log-transfer` on the host uses those same operator credentials (`AWS_PROFILE` / exported keys), not the EC2 instance role. If the ARN list is empty, uploads and console downloads return 403 until ARNs are set and `log-transfer` is re-applied. The jump-host instance role is SSM-only and is not granted S3 access on this bucket.
-- `orchestrate.sh apply` or `configure` after the `log-transfer` stack exists so Ansible writes `/etc/jump-host-log-transfer-bucket` and `/etc/jump-host-log-transfer-region`. `configure` also re-applies `log-transfer` so add/remove of `iam_role_arns` does not require a full infra apply. A failed Terragrunt output lookup on apply/configure is an error (it will not wipe those files). `plan` leaves existing host files unchanged when outputs are unavailable.
+- `orchestrate.sh apply` or `configure` after the `log-transfer` stack exists so Ansible writes `/etc/jump-host-log-transfer-bucket` and `/etc/jump-host-log-transfer-region`. `configure` also re-applies `log-transfer` so add/remove of `iam_role_arns` does not require a full infra apply. A failed Terragrunt output lookup on apply/configure is an error (it will not wipe those files). `plan`, `apply`, and `configure` exit before Ansible when those outputs are missing, empty, or unsafe.
 
 **Upgrade:** Existing live repos must add `<region>/log-transfer/` (copy from `examples/live/.../log-transfer/`). `log-transfer` is in `required_dirs`; without that directory, `orchestrate.sh` refuses to run.
 

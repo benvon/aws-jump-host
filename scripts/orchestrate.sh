@@ -15,11 +15,10 @@ Usage:
 
   validate runs offline checks and does not take a live target (--live-dir, --env, --subenv, --region).
 
-  apply and destroy run Terraform interactively by default (no -auto-approve). Pass --auto-approve for
-  non-interactive runs (CI/automation).
+  apply, configure, and destroy prompt on a terminal by default (no -auto-approve). Pass --auto-approve or
+  --non-interactive for non-interactive runs (CI/automation).
 
-  --ssm-self-management applies the optional ssm-self-management stack before preflight checks to
-  manage required Session Manager preferences in-account.
+  plan and configure require an already-applied observability stack, compliant Session Manager preferences, the expected CloudWatch log group, and existing log-transfer outputs. A new account uses apply first. Use apply --ssm-self-management when this account must create the Session Manager preferences. --ssm-self-management on plan only adds a read-only plan of that stack.
 
 Examples:
   $0 init --live-dir ./examples/live --env dev --subenv east --region us-east-1 --users-vars ./ansible/vars-schema.example.yml

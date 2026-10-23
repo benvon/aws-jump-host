@@ -890,3 +890,17 @@ for line in text.splitlines():
   [[ ! -s "$log" ]]
   rm -f "$log"
 }
+
+@test "SKIP_PREFLIGHT prints the skip line" {
+  install_aws_stub
+  export SKIP_ACCOUNT_CHECK=true
+  export SKIP_PREFLIGHT=true
+  export FAKE_TG_SCENARIO=hosts_ok
+  run ./scripts/orchestrate.sh plan \
+    --live-dir ./examples/live \
+    --env dev \
+    --subenv east \
+    --region us-east-1
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == *"Skipping SSM preflight checks (SKIP_PREFLIGHT=true)."* ]]
+}

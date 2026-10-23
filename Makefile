@@ -110,6 +110,7 @@ contract-test:
 	./tests/contracts/check_log_transfer.sh
 	./tests/contracts/check_tool_pins.sh
 	./tests/contracts/check_deprecated_vars.sh
+	./tests/contracts/check_orchestration_limitation.sh
 
 ansible-test: install-tools
 	@mkdir -p .ansible/tmp .ansible/home
