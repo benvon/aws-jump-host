@@ -21,6 +21,24 @@ fi
 if [[ "${1:-}" == "s3api" && "${2:-}" == "head-bucket" ]]; then
   exit 0
 fi
+if [[ "${1:-}" == "ssm" && "${2:-}" == "get-document" ]]; then
+  if [[ "${FAKE_AWS_DOCUMENT_FAIL:-}" == "1" ]]; then
+    echo "document missing from aws" >&2
+    exit 5
+  fi
+  cat <<'JSON'
+{"inputs":{"runAsEnabled":true,"runAsDefaultUser":"ec2-user","cloudWatchLogGroupName":"/aws/ssm/jump-host/dev/east/us-east-1","cloudWatchStreamingEnabled":true,"cloudWatchEncryptionEnabled":false}}
+JSON
+  exit 0
+fi
+if [[ "${1:-}" == "ssm" && "${2:-}" == "get-service-setting" ]]; then
+  echo "arn:aws:iam::111111111111:role/ssm-managed"
+  exit 0
+fi
+if [[ "${1:-}" == "logs" && "${2:-}" == "describe-log-groups" ]]; then
+  echo "1"
+  exit 0
+fi
 echo "unhandled aws $*" >&2
 exit 99
 EOF
@@ -46,7 +64,7 @@ EOF
 
 teardown() {
   unset FAKE_TG_OUTPUT_FAIL FAKE_TG_BUCKET FAKE_TG_REGION || true
-  unset SKIP_ACCOUNT_CHECK SKIP_PREFLIGHT FAKE_AWS_STS_FAIL FAKE_AWS_ACCOUNT || true
+  unset SKIP_ACCOUNT_CHECK SKIP_PREFLIGHT FAKE_AWS_STS_FAIL FAKE_AWS_ACCOUNT FAKE_AWS_DOCUMENT_FAIL || true
   unset JUMP_HOST_USERS_VARS FAKE_ANSIBLE_LOG FAKE_TG_LOG || true
   if [[ -n "${FAKE_BIN:-}" ]]; then
     rm -rf "$FAKE_BIN"
@@ -684,4 +702,137 @@ assert "apply" in text, text
   grep -q 'destroy -auto-approve' "$log"
   [[ ! -s "$ansible_log" ]]
   rm -f "$log" "$ansible_log" "$users"
+}
+
+@test "plan does not apply stacks" {
+  install_aws_stub
+  export SKIP_ACCOUNT_CHECK=true
+  export FAKE_TG_SCENARIO=hosts_ok
+  local log
+  log="$(mktemp)"
+  export FAKE_TG_LOG="$log"
+  run ./scripts/orchestrate.sh plan \
+    --live-dir ./examples/live \
+    --env dev \
+    --subenv east \
+    --region us-east-1 \
+    --ssm-self-management
+  [[ "$status" -eq 0 ]]
+  python3 -c '
+import pathlib, sys
+text = pathlib.Path(sys.argv[1]).read_text()
+assert "ssm-self-management" in text, text
+assert "plan" in text, text
+for line in text.splitlines():
+    assert "apply" not in line.split(), line
+' "$log"
+  [[ "$output" == *"does not create the CloudWatch log group"* ]]
+  rm -f "$log"
+}
+
+@test "plan stops before terragrunt when preflight cannot read the session document" {
+  install_aws_stub
+  export SKIP_ACCOUNT_CHECK=true
+  export FAKE_AWS_DOCUMENT_FAIL=1
+  export FAKE_TG_SCENARIO=hosts_ok
+  local log
+  log="$(mktemp)"
+  export FAKE_TG_LOG="$log"
+  run ./scripts/orchestrate.sh plan \
+    --live-dir ./examples/live \
+    --env dev \
+    --subenv east \
+    --region us-east-1
+  [[ "$status" -ne 0 ]]
+  [[ "$output" == *"document missing from aws"* ]]
+  [[ "$output" == *"plan does not create the CloudWatch log group"* ]]
+  [[ ! -s "$log" ]]
+  rm -f "$log"
+}
+
+@test "apply runs observability before the other stacks" {
+  install_aws_stub
+  export SKIP_ACCOUNT_CHECK=true
+  export FAKE_TG_SCENARIO=hosts_ok
+  local log
+  log="$(mktemp)"
+  export FAKE_TG_LOG="$log"
+  run ./scripts/orchestrate.sh apply \
+    --live-dir ./examples/live \
+    --env dev \
+    --subenv east \
+    --region us-east-1 \
+    --non-interactive \
+    --ssm-self-management
+  [[ "$status" -eq 0 ]]
+  python3 -c '
+import pathlib, sys
+text = pathlib.Path(sys.argv[1]).read_text()
+lines = [line for line in text.splitlines() if "apply" in line.split()]
+joined = "\n".join(lines)
+obs = joined.find("observability")
+ssm = joined.find("ssm-self-management")
+ep = joined.find("vpc-endpoints")
+jump = joined.find("jump-hosts")
+log_transfer = joined.find("log-transfer")
+assert -1 not in (obs, ssm, ep, jump, log_transfer), joined
+assert obs < ssm < ep < jump < log_transfer, joined
+assert joined.count("observability") == 1, joined
+' "$log"
+  grep -q -- '-auto-approve' "$log"
+  grep -q -- '-input=false' "$log"
+  rm -f "$log"
+}
+
+@test "configure applies log-transfer and not observability" {
+  install_aws_stub
+  export SKIP_ACCOUNT_CHECK=true
+  export FAKE_TG_SCENARIO=hosts_ok
+  local log
+  log="$(mktemp)"
+  export FAKE_TG_LOG="$log"
+  run ./scripts/orchestrate.sh configure \
+    --live-dir ./examples/live \
+    --env dev \
+    --subenv east \
+    --region us-east-1 \
+    --non-interactive
+  [[ "$status" -eq 0 ]]
+  python3 -c '
+import pathlib, sys
+text = pathlib.Path(sys.argv[1]).read_text()
+assert "log-transfer" in text, text
+assert "observability" not in text, text
+for line in text.splitlines():
+    parts = line.split()
+    if "apply" in parts:
+        assert "log-transfer" in line, line
+' "$log"
+  rm -f "$log"
+}
+
+@test "configure rejects --ssm-self-management" {
+  run ./scripts/orchestrate.sh configure \
+    --live-dir ./examples/live \
+    --env dev \
+    --subenv east \
+    --region us-east-1 \
+    --non-interactive \
+    --ssm-self-management
+  [[ "$status" -eq 1 ]]
+  [[ "$output" == *"--ssm-self-management"* ]]
+  [[ "$output" == *"init, plan, or apply"* ]]
+}
+
+@test "destroy rejects --ssm-self-management" {
+  run ./scripts/orchestrate.sh destroy \
+    --live-dir ./examples/live \
+    --env dev \
+    --subenv east \
+    --region us-east-1 \
+    --non-interactive \
+    --ssm-self-management
+  [[ "$status" -eq 1 ]]
+  [[ "$output" == *"--ssm-self-management"* ]]
+  [[ "$output" == *"init, plan, or apply"* ]]
 }

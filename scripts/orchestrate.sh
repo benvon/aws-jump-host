@@ -94,14 +94,6 @@ log_ansible_action() {
   printf "\n==> [ansible/%s] inventory=%s bucket=%s region=%s\n" "$playbook" "$inventory_path" "$bucket" "$aws_region"
 }
 
-run_tg_apply_preflight() {
-  local stack_dir="$1"
-  # Preflight self-management remediation should be non-interactive so plan/check/configure
-  # can run end-to-end without extra prompts.
-  run_tg "$stack_dir" init -reconfigure
-  TG_DOWNLOAD_DIR="$TG_DOWNLOAD_DIR" TG_BACKEND_BOOTSTRAP=true TG_NO_AUTO_INIT=true terragrunt --working-dir "$stack_dir" apply -auto-approve
-}
-
 if [[ $# -lt 1 ]]; then
   usage
   exit 1
@@ -166,6 +158,15 @@ if [[ -z "$live_dir" || -z "$env_name" || -z "$subenv_name" || -z "$aws_region" 
   usage
   exit 1
 fi
+
+case "$command_name" in
+  validate|configure|destroy)
+    if [[ "$ssm_self_management" == "true" ]]; then
+      echo "Error: --ssm-self-management is not valid with ${command_name}. Use it with init, plan, or apply." >&2
+      exit 1
+    fi
+    ;;
+esac
 
 region_dir="$live_dir/$env_name/$subenv_name/$aws_region"
 observability_dir="$region_dir/observability"
@@ -313,19 +314,21 @@ run_preflight() {
   fi
 
   case "$command_name" in
-    plan|apply|configure)
-      echo "Applying observability stack before preflight."
-      run_tg_apply_preflight "$observability_dir"
+    plan|configure)
+      echo "SSM preflight is read-only. ${command_name} does not create the CloudWatch log group or Session Manager preferences."
+      ;;
+    apply)
+      if [[ "$ssm_self_management" == "true" ]]; then
+        echo "SSM preflight is read-only. Applied stacks: observability, ssm-self-management. Endpoints, jump hosts, log-transfer, and Ansible run only after this check passes."
+      else
+        echo "SSM preflight is read-only. Applied stacks: observability. Endpoints, jump hosts, log-transfer, and Ansible run only after this check passes."
+      fi
       ;;
   esac
 
-  if [[ "$ssm_self_management" == "true" ]]; then
-    echo "SSM self-management enabled; applying $ssm_self_management_dir before preflight."
-    run_tg_apply_preflight "$ssm_self_management_dir"
-  fi
-
-  local cmd=("${SCRIPT_DIR}/preflight_ssm_compliance.sh" --region "$aws_region" --expected-log-group "$expected_log_group")
-  "${cmd[@]}"
+  run_logged "${SCRIPT_DIR}/preflight_ssm_compliance.sh" \
+    --region "$aws_region" \
+    --expected-log-group "$expected_log_group"
 }
 
 resolve_ssm_transfer_bucket() {
@@ -532,22 +535,26 @@ case "$command_name" in
     ensure_target_account_identity
     run_preflight
     run_tg "$observability_dir" plan -input=false
+    if [[ "$ssm_self_management" == "true" ]]; then
+      run_tg "$ssm_self_management_dir" plan -input=false
+    fi
     run_tg "$endpoints_dir" plan -input=false
     run_tg "$jump_hosts_dir" plan -input=false
     run_tg "$log_transfer_dir" plan -input=false
-
     run_ansible "jump_hosts.yml" "true"
     ;;
 
   apply)
     ensure_target_account_identity
     require_terminal_or_noninteractive
-    run_preflight
     run_tg_apply "$observability_dir"
+    if [[ "$ssm_self_management" == "true" ]]; then
+      run_tg_apply "$ssm_self_management_dir"
+    fi
+    run_preflight
     run_tg_apply "$endpoints_dir"
     run_tg_apply "$jump_hosts_dir"
     run_tg_apply "$log_transfer_dir"
-
     run_ansible "jump_hosts.yml"
     ;;
 
@@ -555,7 +562,6 @@ case "$command_name" in
     ensure_target_account_identity
     require_terminal_or_noninteractive
     run_preflight
-    # Keep downloader IAM in sync with users.yaml on the documented user add/remove path.
     run_tg_apply "$log_transfer_dir"
     run_ansible "jump_hosts.yml"
     ;;
