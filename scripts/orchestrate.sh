@@ -356,46 +356,41 @@ resolve_ssm_transfer_bucket() {
   echo "$bucket"
 }
 
-resolve_log_transfer_outputs() {
+load_log_transfer_outputs() {
   local bucket region
-  if ! bucket="$(terragrunt --working-dir "$log_transfer_dir" output -raw bucket_name)"; then
-    echo "Error: could not read log-transfer output bucket_name from ${log_transfer_dir}." >&2
-    return 1
-  fi
-  if ! region="$(terragrunt --working-dir "$log_transfer_dir" output -raw region)"; then
-    echo "Error: could not read log-transfer output region from ${log_transfer_dir}." >&2
-    return 1
-  fi
+  capture_stdout bucket terragrunt --working-dir "$log_transfer_dir" output -raw bucket_name
+  capture_stdout region terragrunt --working-dir "$log_transfer_dir" output -raw region
   bucket="$(printf '%s' "$bucket" | tr -d '\n\r')"
   region="$(printf '%s' "$region" | tr -d '\n\r')"
   if [[ -z "$bucket" || -z "$region" ]]; then
     echo "Error: log-transfer outputs bucket_name/region are empty in ${log_transfer_dir}." >&2
-    return 1
+    exit 1
   fi
-  # Same charset the helper interpolates into aws CLI / console URLs.
   if [[ ! "$bucket" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ]]; then
     echo "Error: log-transfer output bucket_name is not a safe S3 bucket name." >&2
-    return 1
+    exit 1
   fi
   if [[ ! "$region" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
     echo "Error: log-transfer output region is not a safe AWS region id." >&2
-    return 1
+    exit 1
   fi
-  printf '%s\t%s\n' "$bucket" "$region"
+  JUMP_HOST_LOG_TRANSFER_BUCKET="$bucket"
+  JUMP_HOST_LOG_TRANSFER_REGION="$region"
 }
 
 check_ssm_transfer_bucket_access() {
   local bucket="$1"
   if ! command -v aws >/dev/null 2>&1; then
-    echo "Warning: aws CLI not found; skipping SSM transfer bucket access check for ${bucket}."
-    return 0
+    echo "Error: Missing required command: aws" >&2
+    exit 1
   fi
 
-  if aws s3api head-bucket --bucket "$bucket" >/dev/null 2>&1; then
-    return 0
-  fi
-
-  cat >&2 <<EOF
+  local head_output head_status=0
+  capture_stdout_status head_output aws s3api head-bucket --bucket "$bucket" && head_status=0 || head_status=$?
+  # Successful head-bucket output is empty. Reference it so the capture is intentional.
+  : "$head_output"
+  if [[ "$head_status" -ne 0 ]]; then
+    cat >&2 <<EOF
 Error: unable to access SSM transfer bucket '${bucket}' with current AWS credentials.
 
 Ansible's amazon.aws.aws_ssm connection requires controller access to this bucket:
@@ -405,7 +400,8 @@ Ansible's amazon.aws.aws_ssm connection requires controller access to this bucke
 Set a different bucket with ANSIBLE_AWS_SSM_BUCKET_NAME (or account.hcl local ansible_ssm_bucket),
 or grant the current role access to this bucket.
 EOF
-  exit 1
+    exit 1
+  fi
 }
 
 ensure_ansible_collections() {
@@ -416,7 +412,7 @@ ensure_ansible_collections() {
 
   require_cmd ansible-galaxy
   echo "Installing Ansible collections from ansible/requirements.yml ..."
-  ansible-galaxy collection install \
+  run_logged ansible-galaxy collection install \
     -r "${REPO_ROOT}/ansible/requirements.yml" \
     -p "${REPO_ROOT}/ansible/collections"
 }
@@ -433,51 +429,45 @@ run_ansible() {
   require_cmd ansible-playbook
   require_cmd jq
 
-  "${SCRIPT_DIR}/render_inventory.sh" \
+  run_logged "${SCRIPT_DIR}/render_inventory.sh" \
     --terragrunt-dir "$jump_hosts_dir" \
     --output "$inventory_path"
 
   host_count="$(jq -r '.all.children.jump_hosts.hosts | length' "$inventory_path")"
   if [[ "$host_count" -eq 0 ]]; then
-    printf "\n==> [ansible/%s] WARNING: inventory has 0 jump hosts — the play is skipped (no roles or tasks run, including session_comfort).\n" "$playbook" >&2
-    printf "    Fix: ensure Terraform apply created instances and terragrunt output 'hosts' is non-empty for %s\n" "$jump_hosts_dir" >&2
+    if [[ "$command_name" == "destroy" ]]; then
+      printf '\n==> [ansible/%s] inventory has 0 jump hosts; skipping decommission.\n' "$playbook"
+      return 0
+    fi
+    printf '\n==> [ansible/%s] Error: inventory has 0 jump hosts — refusing to continue.\n' "$playbook" >&2
+    printf '    Fix: ensure Terraform apply created instances and terragrunt output '\''hosts'\'' is non-empty for %s\n' "$jump_hosts_dir" >&2
+    exit 1
   fi
-  if [[ "$host_count" -gt 0 ]]; then
-    ssm_transfer_bucket="$(resolve_ssm_transfer_bucket)"
-    check_ssm_transfer_bucket_access "$ssm_transfer_bucket"
-    log_ansible_action "$playbook" "$ssm_transfer_bucket"
 
-    "${SCRIPT_DIR}/render_inventory.sh" \
-      --terragrunt-dir "$jump_hosts_dir" \
-      --output "$inventory_path" \
-      --connection "amazon.aws.aws_ssm" \
-      --ssm-region "$aws_region" \
-      --ssm-bucket "$ssm_transfer_bucket" \
-      --s3-addressing-style "virtual"
+  ssm_transfer_bucket="$(resolve_ssm_transfer_bucket)"
+  check_ssm_transfer_bucket_access "$ssm_transfer_bucket"
+  log_ansible_action "$playbook" "$ssm_transfer_bucket"
 
-    extra+=(--extra-vars "ansible_aws_ssm_bucket_name=${ssm_transfer_bucket}")
-    # Avoid cross-region redirect edge cases in the SSM plugin's S3 transfers.
-    extra+=(--extra-vars "ansible_aws_ssm_s3_addressing_style=virtual")
-  else
-    printf "\n==> [ansible/%s] inventory=%s hosts=0 (skipping SSM bucket checks)\n" "$playbook" "$inventory_path"
-  fi
+  run_logged "${SCRIPT_DIR}/render_inventory.sh" \
+    --terragrunt-dir "$jump_hosts_dir" \
+    --output "$inventory_path" \
+    --connection "amazon.aws.aws_ssm" \
+    --ssm-region "$aws_region" \
+    --ssm-bucket "$ssm_transfer_bucket" \
+    --s3-addressing-style "virtual"
+
+  extra+=(--extra-vars "ansible_aws_ssm_bucket_name=${ssm_transfer_bucket}")
+  # Avoid cross-region redirect edge cases in the SSM plugin's S3 transfers.
+  extra+=(--extra-vars "ansible_aws_ssm_s3_addressing_style=virtual")
 
   if [[ -n "$users_vars" && "$omit_users_vars" != "true" ]]; then
     extra+=(--extra-vars "@$users_vars")
   fi
 
-  local log_xfer
   if [[ "$playbook" == "jump_hosts.yml" ]]; then
-    if log_xfer="$(resolve_log_transfer_outputs)"; then
-      extra+=(--extra-vars "jump_host_log_transfer_bucket=${log_xfer%%$'\t'*}")
-      extra+=(--extra-vars "jump_host_log_transfer_region=${log_xfer#*$'\t'}")
-    elif [[ "$check_mode" == "true" ]]; then
-      printf "\n==> [ansible/%s] WARNING: log-transfer outputs unavailable; leaving /etc/jump-host-log-transfer-* unchanged.\n" "$playbook" >&2
-      extra+=(--extra-vars "jump_host_log_transfer_skip=true")
-    else
-      echo "Error: could not read log-transfer Terragrunt outputs; refusing to overwrite /etc/jump-host-log-transfer-*." >&2
-      exit 1
-    fi
+    load_log_transfer_outputs
+    extra+=(--extra-vars "jump_host_log_transfer_bucket=${JUMP_HOST_LOG_TRANSFER_BUCKET}")
+    extra+=(--extra-vars "jump_host_log_transfer_region=${JUMP_HOST_LOG_TRANSFER_REGION}")
   fi
 
   if [[ -n "$env_name" ]]; then
@@ -492,7 +482,7 @@ run_ansible() {
   ANSIBLE_CONFIG="${REPO_ROOT}/ansible.cfg" \
   AWS_REGION="$aws_region" \
   OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES \
-  ansible-playbook \
+  run_logged ansible-playbook \
     -i "$inventory_path" \
     "${REPO_ROOT}/ansible/playbooks/${playbook}" \
     "${extra[@]}"

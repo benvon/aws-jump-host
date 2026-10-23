@@ -26,11 +26,18 @@ exit 99
 EOF
   chmod +x "$FAKE_BIN/aws"
   export PATH="${FAKE_BIN}:${PATH}"
+  local repo_root="${REPO_ROOT:-$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)}"
+  mkdir -p "${repo_root}/ansible/collections/ansible_collections/amazon/aws/plugins/connection"
+  touch "${repo_root}/ansible/collections/ansible_collections/amazon/aws/plugins/connection/aws_ssm.py"
 }
 
 teardown() {
+  unset FAKE_TG_OUTPUT_FAIL FAKE_TG_BUCKET FAKE_TG_REGION || true
+  unset SKIP_ACCOUNT_CHECK SKIP_PREFLIGHT FAKE_AWS_STS_FAIL FAKE_AWS_ACCOUNT || true
+  unset JUMP_HOST_USERS_VARS FAKE_ANSIBLE_LOG FAKE_TG_LOG || true
   if [[ -n "${FAKE_BIN:-}" ]]; then
     rm -rf "$FAKE_BIN"
+    unset FAKE_BIN || true
   fi
 }
 
@@ -160,9 +167,10 @@ sys.exit(1)'
 }
 
 @test "orchestrate plan runs log-transfer after jump-hosts" {
+  install_aws_stub
   export SKIP_ACCOUNT_CHECK=true
   export SKIP_PREFLIGHT=true
-  export FAKE_TG_SCENARIO=hosts_empty
+  export FAKE_TG_SCENARIO=hosts_ok
   local log ansible_log
   log="$(mktemp)"
   ansible_log="$(mktemp)"
@@ -211,9 +219,10 @@ assert l != -1 and j != -1 and l < j, text
 }
 
 @test "orchestrate without --users-vars clears inherited JUMP_HOST_USERS_VARS" {
+  install_aws_stub
   export SKIP_ACCOUNT_CHECK=true
   export SKIP_PREFLIGHT=true
-  export FAKE_TG_SCENARIO=hosts_empty
+  export FAKE_TG_SCENARIO=hosts_ok
   export JUMP_HOST_USERS_VARS="/this/should/not/be/used.yml"
   local log ansible_log
   log="$(mktemp)"
@@ -386,9 +395,10 @@ EOF
 }
 
 @test "orchestrate exports JUMP_HOST_USERS_VARS and JUMP_HOST_USERS_VALIDATOR" {
+  install_aws_stub
   export SKIP_ACCOUNT_CHECK=true
   export SKIP_PREFLIGHT=true
-  export FAKE_TG_SCENARIO=hosts_empty
+  export FAKE_TG_SCENARIO=hosts_ok
   local log ansible_log users
   log="$(mktemp)"
   ansible_log="$(mktemp)"
@@ -409,9 +419,10 @@ EOF
 }
 
 @test "orchestrate configure fails when log-transfer outputs cannot be read" {
+  install_aws_stub
   export SKIP_ACCOUNT_CHECK=true
   export SKIP_PREFLIGHT=true
-  export FAKE_TG_SCENARIO=hosts_empty
+  export FAKE_TG_SCENARIO=hosts_ok
   export FAKE_TG_OUTPUT_FAIL=1
   local ansible_log
   ansible_log="$(mktemp)"
@@ -428,25 +439,26 @@ EOF
   rm -f "$ansible_log"
 }
 
-@test "orchestrate plan skips log-transfer extra-vars when output lookup fails" {
+@test "orchestrate plan fails when log-transfer outputs cannot be read" {
+  install_aws_stub
   export SKIP_ACCOUNT_CHECK=true
   export SKIP_PREFLIGHT=true
-  export FAKE_TG_SCENARIO=hosts_empty
+  export FAKE_TG_SCENARIO=hosts_ok
   export FAKE_TG_OUTPUT_FAIL=1
-  local log ansible_log
-  log="$(mktemp)"
+  local ansible_log
   ansible_log="$(mktemp)"
-  export FAKE_TG_LOG="$log"
   export FAKE_ANSIBLE_LOG="$ansible_log"
   run ./scripts/orchestrate.sh plan \
     --live-dir ./examples/live \
     --env dev \
     --subenv east \
     --region us-east-1
-  [[ "$status" -eq 0 ]]
-  grep -q 'jump_host_log_transfer_skip=true' "$ansible_log"
-  ! grep -q 'jump_host_log_transfer_bucket=' "$ansible_log"
-  rm -f "$log" "$ansible_log"
+  [[ "$status" -ne 0 ]]
+  [[ "$output" == *"log-transfer"* ]]
+  [[ "$output" == *"Error: command failed"* ]]
+  [[ "$output" == *"unavailable"* ]]
+  [[ ! -s "$ansible_log" ]]
+  rm -f "$ansible_log"
 }
 
 @test "orchestrate rejects a missing --users-vars file" {
@@ -461,9 +473,10 @@ EOF
 }
 
 @test "orchestrate configure applies log-transfer before ansible" {
+  install_aws_stub
   export SKIP_ACCOUNT_CHECK=true
   export SKIP_PREFLIGHT=true
-  export FAKE_TG_SCENARIO=hosts_empty
+  export FAKE_TG_SCENARIO=hosts_ok
   local log ansible_log
   log="$(mktemp)"
   ansible_log="$(mktemp)"
@@ -487,9 +500,10 @@ assert "apply" in text, text
 }
 
 @test "orchestrate configure rejects an unsafe log-transfer bucket output" {
+  install_aws_stub
   export SKIP_ACCOUNT_CHECK=true
   export SKIP_PREFLIGHT=true
-  export FAKE_TG_SCENARIO=hosts_empty
+  export FAKE_TG_SCENARIO=hosts_ok
   export FAKE_TG_BUCKET='example-log-transfer-bucket;evil'
   local ansible_log
   ansible_log="$(mktemp)"
@@ -590,4 +604,55 @@ assert "apply" in text, text
     --region us-east-1
   [[ "$status" -eq 0 ]]
   [[ "$output" == *"Skipping account identity check (SKIP_ACCOUNT_CHECK=true)."* ]]
+}
+
+@test "plan apply and configure fail when the inventory is empty" {
+  export SKIP_ACCOUNT_CHECK=true
+  export SKIP_PREFLIGHT=true
+  export FAKE_TG_SCENARIO=hosts_empty
+  local command_name
+  for command_name in plan apply configure; do
+    local log
+    log="$(mktemp)"
+    export FAKE_TG_LOG="$log"
+    if [[ "$command_name" == "plan" ]]; then
+      run ./scripts/orchestrate.sh "$command_name" \
+        --live-dir ./examples/live \
+        --env dev \
+        --subenv east \
+        --region us-east-1
+    else
+      run ./scripts/orchestrate.sh "$command_name" \
+        --live-dir ./examples/live \
+        --env dev \
+        --subenv east \
+        --region us-east-1 \
+        --non-interactive
+    fi
+    [[ "$status" -eq 1 ]]
+    [[ "$output" == *"0 jump hosts"* ]]
+    rm -f "$log"
+  done
+}
+
+@test "destroy with zero hosts skips decommission and still destroys stacks" {
+  export SKIP_ACCOUNT_CHECK=true
+  export SKIP_PREFLIGHT=true
+  export FAKE_TG_SCENARIO=hosts_empty
+  local log users
+  log="$(mktemp)"
+  users="$(mktemp)"
+  printf 'users: []\n' >"$users"
+  export FAKE_TG_LOG="$log"
+  run ./scripts/orchestrate.sh destroy \
+    --live-dir ./examples/live \
+    --env dev \
+    --subenv east \
+    --region us-east-1 \
+    --users-vars "$users" \
+    --non-interactive
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == *"inventory has 0 jump hosts; skipping decommission."* ]]
+  grep -q 'destroy -auto-approve' "$log"
+  rm -f "$log" "$users"
 }
