@@ -101,5 +101,9 @@ if [[ "${1:-}" =~ ^(plan|init|apply|destroy)$ ]]; then
   exit 0
 fi
 
+if [[ "${1:-}" == "hcl" && "${2:-}" == "validate" ]]; then
+  exit 0
+fi
+
 echo "fake terragrunt: unhandled: $*" >&2
 exit 99

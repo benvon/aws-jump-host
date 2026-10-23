@@ -10,7 +10,10 @@ TG_DOWNLOAD_DIR="${TG_DOWNLOAD_DIR:-${REPO_ROOT}/.cache/terragrunt}"
 usage() {
   cat <<USAGE
 Usage:
-  $0 <init|plan|apply|configure|check|destroy> --live-dir <path> --env <env> --subenv <subenv> --region <region> [--users-vars <path>] [--auto-approve] [--ssm-self-management]
+  $0 validate
+  $0 <init|plan|apply|configure|destroy> --live-dir <path> --env <env> --subenv <subenv> --region <region> [--users-vars <path>] [--non-interactive|--auto-approve] [--ssm-self-management]
+
+  validate runs offline checks and does not take a live target (--live-dir, --env, --subenv, --region).
 
   apply and destroy run Terraform interactively by default (no -auto-approve). Pass --auto-approve for
   non-interactive runs (CI/automation).
@@ -154,9 +157,21 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$live_dir" || -z "$env_name" || -z "$subenv_name" || -z "$aws_region" ]]; then
-  usage
+if [[ "$command_name" == "check" ]]; then
+  cat >&2 <<EOF
+Error: 'check' no longer runs from orchestrate.sh.
+Offline CI: $0 validate
+Read-only live CI: $0 plan --live-dir <path> --env <env> --subenv <subenv> --region <region>
+Formatting and lint: make fmt-check && make lint
+EOF
   exit 1
+fi
+
+if [[ "$command_name" != "validate" ]]; then
+  if [[ -z "$live_dir" || -z "$env_name" || -z "$subenv_name" || -z "$aws_region" ]]; then
+    usage
+    exit 1
+  fi
 fi
 
 case "$command_name" in
@@ -168,26 +183,28 @@ case "$command_name" in
     ;;
 esac
 
-region_dir="$live_dir/$env_name/$subenv_name/$aws_region"
-observability_dir="$region_dir/observability"
-endpoints_dir="$region_dir/vpc-endpoints"
-jump_hosts_dir="$region_dir/jump-hosts"
-log_transfer_dir="$region_dir/log-transfer"
-ssm_self_management_dir="$region_dir/ssm-self-management"
-inventory_path="${REPO_ROOT}/ansible/inventory/generated-${env_name}-${subenv_name}-${aws_region}.yml"
-expected_log_group="/aws/ssm/jump-host/${env_name}/${subenv_name}/${aws_region}"
+if [[ "$command_name" != "validate" ]]; then
+  region_dir="$live_dir/$env_name/$subenv_name/$aws_region"
+  observability_dir="$region_dir/observability"
+  endpoints_dir="$region_dir/vpc-endpoints"
+  jump_hosts_dir="$region_dir/jump-hosts"
+  log_transfer_dir="$region_dir/log-transfer"
+  ssm_self_management_dir="$region_dir/ssm-self-management"
+  inventory_path="${REPO_ROOT}/ansible/inventory/generated-${env_name}-${subenv_name}-${aws_region}.yml"
+  expected_log_group="/aws/ssm/jump-host/${env_name}/${subenv_name}/${aws_region}"
 
-required_dirs=("$region_dir" "$observability_dir" "$endpoints_dir" "$jump_hosts_dir" "$log_transfer_dir")
-if [[ "$ssm_self_management" == "true" ]]; then
-  required_dirs+=("$ssm_self_management_dir")
-fi
-
-for dir in "${required_dirs[@]}"; do
-  if [[ ! -d "$dir" ]]; then
-    echo "Required directory not found: $dir" >&2
-    exit 1
+  required_dirs=("$region_dir" "$observability_dir" "$endpoints_dir" "$jump_hosts_dir" "$log_transfer_dir")
+  if [[ "$ssm_self_management" == "true" ]]; then
+    required_dirs+=("$ssm_self_management_dir")
   fi
-done
+
+  for dir in "${required_dirs[@]}"; do
+    if [[ ! -d "$dir" ]]; then
+      echo "Required directory not found: $dir" >&2
+      exit 1
+    fi
+  done
+fi
 
 # Always mark orchestration so log-transfer Terragrunt does not independently
 # fall back to ancestor ansible/users.yaml or a leftover JUMP_HOST_USERS_VARS.
@@ -506,29 +523,35 @@ case "$command_name" in
     run_tg "$log_transfer_dir" init -input=false
     ;;
 
-  check)
-    ensure_target_account_identity
+  validate)
+    echo "validate: terraform validate for modules/terraform, terragrunt hcl validate for examples/live, ansible syntax-check for both playbooks."
     require_cmd terraform
     require_cmd terragrunt
-    require_cmd ansible-lint
-    require_cmd yamllint
-    require_cmd shellcheck
-    require_cmd tflint
-    require_cmd tfsec
-    require_cmd checkov
-
-    terraform fmt -check -recursive modules examples
-    terragrunt hcl format --check --working-dir terragrunt --exclude-dir .terragrunt-cache --exclude-dir .terraform
-    terragrunt hcl format --check --working-dir examples/live --exclude-dir .terragrunt-cache --exclude-dir .terraform
-    ansible-lint ansible/playbooks ansible/roles ansible/group_vars ansible/requirements.yml ansible/vars-schema.example.yml
-    yamllint ansible/playbooks ansible/roles ansible/group_vars ansible/requirements.yml ansible/vars-schema.example.yml
-    shellcheck scripts/*.sh
-    tflint --init
-    tflint --recursive modules/terraform
-    tfsec modules/terraform
-    checkov -d modules/terraform
-
-    run_preflight
+    require_cmd ansible-playbook
+    local_module=""
+    local_stack=""
+    for local_module in "${REPO_ROOT}"/modules/terraform/*; do
+      [[ -d "$local_module" ]] || continue
+      echo "validate: terraform validate ${local_module#"${REPO_ROOT}"/}"
+      run_logged terraform -chdir="$local_module" init -backend=false -input=false -no-color
+      run_logged terraform -chdir="$local_module" validate -no-color
+    done
+    while IFS= read -r local_stack; do
+      [[ -n "$local_stack" ]] || continue
+      echo "validate: terragrunt hcl validate ${local_stack#"${REPO_ROOT}"/}"
+      TG_DOWNLOAD_DIR="$TG_DOWNLOAD_DIR" run_logged terragrunt hcl validate --inputs --working-dir "$local_stack"
+    done < <(find "${REPO_ROOT}/examples/live" \
+      -type d -name .terragrunt-cache -prune -o \
+      -type d -name .terraform -prune -o \
+      -type f -name terragrunt.hcl -exec dirname {} \; | sort)
+    run_logged ansible-playbook \
+      -i "${REPO_ROOT}/ansible/inventory/hosts.yml" \
+      "${REPO_ROOT}/ansible/playbooks/jump_hosts.yml" \
+      --syntax-check
+    run_logged ansible-playbook \
+      -i "${REPO_ROOT}/ansible/inventory/hosts.yml" \
+      "${REPO_ROOT}/ansible/playbooks/decommission.yml" \
+      --syntax-check
     ;;
 
   plan)

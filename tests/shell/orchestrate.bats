@@ -836,3 +836,57 @@ for line in text.splitlines():
   [[ "$output" == *"--ssm-self-management"* ]]
   [[ "$output" == *"init, plan, or apply"* ]]
 }
+
+@test "validate runs terraform, terragrunt hcl validate, and ansible syntax-check" {
+  local tf_log tg_log ansible_log
+  tf_log="$(mktemp)"
+  tg_log="$(mktemp)"
+  ansible_log="$(mktemp)"
+  export FAKE_TERRAFORM_LOG="$tf_log"
+  export FAKE_TG_LOG="$tg_log"
+  export FAKE_ANSIBLE_LOG="$ansible_log"
+  run ./scripts/orchestrate.sh validate
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == *"offline repository validation"* ]]
+  grep -q 'validate' "$tf_log"
+  grep -q 'hcl' "$tg_log"
+  grep -q -- '--syntax-check' "$ansible_log"
+  [[ "$(grep -c -- '--syntax-check' "$ansible_log")" -eq 2 ]]
+  rm -f "$tf_log" "$tg_log" "$ansible_log"
+}
+
+@test "validate stops at the first failing terraform validate" {
+  local tf_log tg_log
+  tf_log="$(mktemp)"
+  tg_log="$(mktemp)"
+  export FAKE_TERRAFORM_LOG="$tf_log"
+  export FAKE_TG_LOG="$tg_log"
+  export FAKE_TERRAFORM_FAIL=1
+  run ./scripts/orchestrate.sh validate
+  [[ "$status" -eq 2 ]]
+  [[ "$output" == *"terraform validate exploded"* ]]
+  [[ "$output" == *"Error: command failed (exit 2):"* ]]
+  [[ "$(grep -c validate "$tf_log")" -eq 1 ]]
+  [[ ! -s "$tg_log" ]]
+  rm -f "$tf_log" "$tg_log"
+}
+
+@test "validate rejects --ssm-self-management" {
+  run ./scripts/orchestrate.sh validate --ssm-self-management
+  [[ "$status" -eq 1 ]]
+  [[ "$output" == *"--ssm-self-management"* ]]
+  [[ "$output" == *"init, plan, or apply"* ]]
+  [[ "$output" != *"offline repository validation"* ]]
+}
+
+@test "check names validate and plan and does not run terragrunt" {
+  local log
+  log="$(mktemp)"
+  export FAKE_TG_LOG="$log"
+  run ./scripts/orchestrate.sh check
+  [[ "$status" -eq 1 ]]
+  [[ "$output" == *"validate"* ]]
+  [[ "$output" == *"plan"* ]]
+  [[ ! -s "$log" ]]
+  rm -f "$log"
+}

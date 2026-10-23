@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -n "${FAKE_TERRAFORM_LOG:-}" ]]; then
+  printf '%q ' "$@" >>"$FAKE_TERRAFORM_LOG"
+  echo >>"$FAKE_TERRAFORM_LOG"
+fi
+
+if [[ "${FAKE_TERRAFORM_FAIL:-}" == "1" ]]; then
+  for arg in "$@"; do
+    if [[ "$arg" == "validate" ]]; then
+      echo "terraform validate exploded" >&2
+      exit 2
+    fi
+  done
+fi
+
+exit 0
