@@ -64,10 +64,29 @@ teardown() {
     --auto-approve
   [[ "$status" -eq 0 ]]
   grep -q -- '-auto-approve' "$log" || grep -q -- 'auto-approve' "$log"
+  grep -q -- '-input=false' "$log"
   rm -f "$log"
 }
 
-@test "orchestrate destroy without --auto-approve does not add -auto-approve" {
+@test "apply without a terminal exits before terragrunt" {
+  export SKIP_ACCOUNT_CHECK=true
+  export SKIP_PREFLIGHT=true
+  export FAKE_TG_SCENARIO=hosts_ok
+  local log
+  log="$(mktemp)"
+  export FAKE_TG_LOG="$log"
+  run ./scripts/orchestrate.sh apply \
+    --live-dir ./examples/live \
+    --env dev \
+    --subenv east \
+    --region us-east-1
+  [[ "$status" -eq 1 ]]
+  [[ "$output" == *"--non-interactive"* ]]
+  [[ ! -s "$log" ]]
+  rm -f "$log"
+}
+
+@test "destroy without a terminal exits before terragrunt" {
   export SKIP_ACCOUNT_CHECK=true
   export SKIP_PREFLIGHT=true
   export FAKE_TG_SCENARIO=hosts_ok
@@ -79,8 +98,46 @@ teardown() {
     --env dev \
     --subenv east \
     --region us-east-1
+  [[ "$status" -eq 1 ]]
+  [[ "$output" == *"--non-interactive"* ]]
+  [[ ! -s "$log" ]]
+  rm -f "$log"
+}
+
+@test "non-interactive destroy passes -auto-approve and -input=false" {
+  export SKIP_ACCOUNT_CHECK=true
+  export SKIP_PREFLIGHT=true
+  export FAKE_TG_SCENARIO=hosts_ok
+  local log
+  log="$(mktemp)"
+  export FAKE_TG_LOG="$log"
+  run ./scripts/orchestrate.sh destroy \
+    --live-dir ./examples/live \
+    --env dev \
+    --subenv east \
+    --region us-east-1 \
+    --non-interactive
   [[ "$status" -eq 0 ]]
-  run grep -qF 'destroy -auto-approve' "$log"
+  grep -q -- '-auto-approve' "$log"
+  grep -q -- '-input=false' "$log"
+  rm -f "$log"
+}
+
+@test "destroy on a terminal omits -auto-approve" {
+  export SKIP_ACCOUNT_CHECK=true
+  export SKIP_PREFLIGHT=true
+  export FAKE_TG_SCENARIO=hosts_ok
+  local log
+  log="$(mktemp)"
+  export FAKE_TG_LOG="$log"
+  run python3 -c 'import os, pty, sys
+status = pty.spawn(["./scripts/orchestrate.sh", "destroy", "--live-dir", "./examples/live", "--env", "dev", "--subenv", "east", "--region", "us-east-1"])
+if os.WIFEXITED(status):
+    sys.exit(os.WEXITSTATUS(status))
+sys.exit(1)'
+  [[ "$status" -eq 0 ]]
+  grep -q 'destroy -input=false' "$log"
+  run grep -qF -- '-auto-approve' "$log"
   [[ "$status" -ne 0 ]]
   rm -f "$log"
 }
@@ -363,7 +420,8 @@ EOF
     --live-dir ./examples/live \
     --env dev \
     --subenv east \
-    --region us-east-1
+    --region us-east-1 \
+    --non-interactive
   [[ "$status" -ne 0 ]]
   [[ "$output" == *"log-transfer"* ]]
   ! grep -q 'jump_host_log_transfer_bucket=' "$ansible_log"
@@ -440,7 +498,8 @@ assert "apply" in text, text
     --live-dir ./examples/live \
     --env dev \
     --subenv east \
-    --region us-east-1
+    --region us-east-1 \
+    --non-interactive
   [[ "$status" -ne 0 ]]
   ! grep -q 'jump_host_log_transfer_bucket=' "$ansible_log"
   rm -f "$ansible_log"

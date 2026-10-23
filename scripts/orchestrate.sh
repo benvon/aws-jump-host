@@ -66,24 +66,25 @@ run_tg() {
   local stack_dir="$1"
   shift
   log_tg_action "$stack_dir" "$@"
-  TG_DOWNLOAD_DIR="$TG_DOWNLOAD_DIR" TG_BACKEND_BOOTSTRAP=true terragrunt --working-dir "$stack_dir" "$@"
+  TG_DOWNLOAD_DIR="$TG_DOWNLOAD_DIR" TG_BACKEND_BOOTSTRAP=true \
+    run_logged terragrunt --working-dir "$stack_dir" "$@"
 }
 
 run_tg_apply() {
   local stack_dir="$1"
-  if [[ "$auto_approve" == "true" ]]; then
-    run_tg "$stack_dir" apply -auto-approve
+  if [[ "$noninteractive" == "true" ]]; then
+    run_tg "$stack_dir" apply -auto-approve -input=false
   else
-    run_tg "$stack_dir" apply
+    run_tg "$stack_dir" apply -input=false
   fi
 }
 
 run_tg_destroy() {
   local stack_dir="$1"
-  if [[ "$auto_approve" == "true" ]]; then
-    run_tg "$stack_dir" destroy -auto-approve
+  if [[ "$noninteractive" == "true" ]]; then
+    run_tg "$stack_dir" destroy -auto-approve -input=false
   else
-    run_tg "$stack_dir" destroy
+    run_tg "$stack_dir" destroy -input=false
   fi
 }
 
@@ -115,6 +116,7 @@ subenv_name=""
 aws_region=""
 users_vars=""
 auto_approve="false"
+noninteractive="false"
 ssm_self_management="false"
 
 while [[ $# -gt 0 ]]; do
@@ -139,8 +141,9 @@ while [[ $# -gt 0 ]]; do
       users_vars="$2"
       shift 2
       ;;
-    --auto-approve)
+    --auto-approve|--non-interactive)
       auto_approve="true"
+      noninteractive="true"
       shift
       ;;
     --ssm-self-management)
@@ -208,6 +211,54 @@ fi
 
 require_cmd terragrunt
 mkdir -p "$TG_DOWNLOAD_DIR"
+
+log_run_banner() {
+  printf '\n==> orchestrate %s\n' "$command_name"
+  if [[ "$command_name" == "validate" ]]; then
+    printf '    mode: offline repository validation\n'
+    printf '    non-interactive: %s\n' "$noninteractive"
+    return 0
+  fi
+  printf '    live-dir: %s\n' "$live_dir"
+  printf '    env/subenv/region: %s/%s/%s\n' "$env_name" "$subenv_name" "$aws_region"
+  if [[ -n "$users_vars" ]]; then
+    printf '    users-vars: %s\n' "$users_vars"
+  else
+    printf '    users-vars: (none)\n'
+  fi
+  printf '    non-interactive: %s\n' "$noninteractive"
+  if [[ "${SKIP_ACCOUNT_CHECK:-false}" == "true" ]]; then
+    printf '    account check: skipped (SKIP_ACCOUNT_CHECK=true)\n'
+  else
+    printf '    account check: required\n'
+  fi
+  case "$command_name" in
+    plan|apply|configure)
+      if [[ "${SKIP_PREFLIGHT:-false}" == "true" ]]; then
+        printf '    preflight: skipped (SKIP_PREFLIGHT=true)\n'
+      else
+        printf '    preflight: required\n'
+      fi
+      ;;
+    *)
+      printf '    preflight: not used\n'
+      ;;
+  esac
+}
+
+require_terminal_or_noninteractive() {
+  if [[ "$noninteractive" == "true" ]]; then
+    return 0
+  fi
+  if [[ -t 0 ]]; then
+    return 0
+  fi
+  cat >&2 <<EOF
+Error: ${command_name} would prompt for Terraform approval, and stdin is not a terminal.
+Re-run with --non-interactive for a CD pipeline.
+EOF
+  exit 1
+}
 
 ensure_target_account_identity() {
   if [[ "${SKIP_ACCOUNT_CHECK:-false}" == "true" ]]; then
@@ -447,16 +498,18 @@ run_ansible() {
     "${extra[@]}"
 }
 
+log_run_banner
+
 case "$command_name" in
   init)
     ensure_target_account_identity
-    run_tg "$observability_dir" init
+    run_tg "$observability_dir" init -input=false
     if [[ "$ssm_self_management" == "true" ]]; then
-      run_tg "$ssm_self_management_dir" init
+      run_tg "$ssm_self_management_dir" init -input=false
     fi
-    run_tg "$endpoints_dir" init
-    run_tg "$jump_hosts_dir" init
-    run_tg "$log_transfer_dir" init
+    run_tg "$endpoints_dir" init -input=false
+    run_tg "$jump_hosts_dir" init -input=false
+    run_tg "$log_transfer_dir" init -input=false
     ;;
 
   check)
@@ -487,16 +540,17 @@ case "$command_name" in
   plan)
     ensure_target_account_identity
     run_preflight
-    run_tg "$observability_dir" plan
-    run_tg "$endpoints_dir" plan
-    run_tg "$jump_hosts_dir" plan
-    run_tg "$log_transfer_dir" plan
+    run_tg "$observability_dir" plan -input=false
+    run_tg "$endpoints_dir" plan -input=false
+    run_tg "$jump_hosts_dir" plan -input=false
+    run_tg "$log_transfer_dir" plan -input=false
 
     run_ansible "jump_hosts.yml" "true"
     ;;
 
   apply)
     ensure_target_account_identity
+    require_terminal_or_noninteractive
     run_preflight
     run_tg_apply "$observability_dir"
     run_tg_apply "$endpoints_dir"
@@ -508,6 +562,7 @@ case "$command_name" in
 
   configure)
     ensure_target_account_identity
+    require_terminal_or_noninteractive
     run_preflight
     # Keep downloader IAM in sync with users.yaml on the documented user add/remove path.
     run_tg_apply "$log_transfer_dir"
@@ -516,6 +571,7 @@ case "$command_name" in
 
   destroy)
     ensure_target_account_identity
+    require_terminal_or_noninteractive
     if [[ -n "$users_vars" ]]; then
       run_ansible "decommission.yml" "false" "true"
     else
