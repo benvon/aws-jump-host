@@ -61,7 +61,7 @@
 - Consumes: nothing
 - Produces:
   - `log_argv command [args...]` prints a leading newline, `==> `, and `%q`-quoted argv
-  - `run_logged command [args...]` runs the command in the current shell and exits with its status on failure
+  - `run_logged command [args...]` runs the command in a subshell, `( "$@" )`, and exits with its status on failure. Call `run_logged` from the current shell. The subshell lets a callee `exit` print `Error: command failed` instead of skipping that line. External programs are unchanged.
   - `capture_stdout varname command [args...]` stores stdout with `printf -v` and exits with the tool status on failure
   - `capture_stdout_status varname command [args...]` stores stdout and `return`s the tool status
 
@@ -169,7 +169,7 @@ report_command_failure() {
 run_logged() {
   log_argv "$@"
   local status=0
-  "$@" && status=0 || status=$?
+  ( "$@" ) && status=0 || status=$?
   if [[ "$status" -ne 0 ]]; then
     report_command_failure "$status" "$@"
     exit "$status"
