@@ -1,6 +1,39 @@
 #!/usr/bin/env bats
 load helper
 
+install_aws_stub() {
+  FAKE_BIN="$(mktemp -d)"
+  cat >"$FAKE_BIN/aws" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ -n "${FAKE_AWS_LOG:-}" ]]; then
+  printf '%q ' "$@" >>"$FAKE_AWS_LOG"
+  echo >>"$FAKE_AWS_LOG"
+fi
+if [[ "${1:-}" == "sts" && "${2:-}" == "get-caller-identity" ]]; then
+  if [[ "${FAKE_AWS_STS_FAIL:-}" == "1" ]]; then
+    echo "sts exploded" >&2
+    exit 4
+  fi
+  echo "${FAKE_AWS_ACCOUNT:-111111111111}"
+  exit 0
+fi
+if [[ "${1:-}" == "s3api" && "${2:-}" == "head-bucket" ]]; then
+  exit 0
+fi
+echo "unhandled aws $*" >&2
+exit 99
+EOF
+  chmod +x "$FAKE_BIN/aws"
+  export PATH="${FAKE_BIN}:${PATH}"
+}
+
+teardown() {
+  if [[ -n "${FAKE_BIN:-}" ]]; then
+    rm -rf "$FAKE_BIN"
+  fi
+}
+
 @test "orchestrate exits non-zero with no arguments" {
   run ./scripts/orchestrate.sh
   [[ "$status" -ne 0 ]]
@@ -411,4 +444,91 @@ assert "apply" in text, text
   [[ "$status" -ne 0 ]]
   ! grep -q 'jump_host_log_transfer_bucket=' "$ansible_log"
   rm -f "$ansible_log"
+}
+
+@test "orchestrate plan fails when account.hcl is missing" {
+  install_aws_stub
+  local root
+  root="$(mktemp -d)"
+  mkdir -p "$root/dev/east/us-east-1"/{observability,vpc-endpoints,jump-hosts,log-transfer}
+  run ./scripts/orchestrate.sh plan \
+    --live-dir "$root" \
+    --env dev \
+    --subenv east \
+    --region us-east-1
+  [[ "$status" -eq 1 ]]
+  [[ "$output" == *"Error: account.hcl not found:"* ]]
+  rm -rf "$root"
+}
+
+@test "orchestrate plan fails when account_id cannot be parsed" {
+  install_aws_stub
+  local root
+  root="$(mktemp -d)"
+  mkdir -p "$root/dev/east/us-east-1"/{observability,vpc-endpoints,jump-hosts,log-transfer}
+  printf 'locals {\n  account_id = "not-an-account"\n}\n' >"$root/dev/account.hcl"
+  run ./scripts/orchestrate.sh plan \
+    --live-dir "$root" \
+    --env dev \
+    --subenv east \
+    --region us-east-1
+  [[ "$status" -eq 1 ]]
+  [[ "$output" == *"Error: could not parse a 12-digit account_id from "* ]]
+  rm -rf "$root"
+}
+
+@test "orchestrate plan preserves STS stderr and status" {
+  install_aws_stub
+  export FAKE_AWS_STS_FAIL=1
+  export SKIP_PREFLIGHT=true
+  run ./scripts/orchestrate.sh plan \
+    --live-dir ./examples/live \
+    --env dev \
+    --subenv east \
+    --region us-east-1
+  [[ "$status" -eq 4 ]]
+  [[ "$output" == *"sts exploded"* ]]
+  [[ "$output" == *"Error: command failed (exit 4):"* ]]
+}
+
+@test "orchestrate plan fails on account mismatch" {
+  install_aws_stub
+  export FAKE_AWS_ACCOUNT=999999999999
+  export SKIP_PREFLIGHT=true
+  run ./scripts/orchestrate.sh plan \
+    --live-dir ./examples/live \
+    --env dev \
+    --subenv east \
+    --region us-east-1
+  [[ "$status" -eq 1 ]]
+  [[ "$output" == *"Error: AWS account mismatch"* ]]
+  [[ "$output" == *"999999999999"* ]]
+  [[ "$output" == *"111111111111"* ]]
+}
+
+@test "orchestrate plan confirms a matching account" {
+  install_aws_stub
+  export FAKE_AWS_ACCOUNT=111111111111
+  export SKIP_PREFLIGHT=true
+  export FAKE_TG_SCENARIO=hosts_ok
+  run ./scripts/orchestrate.sh plan \
+    --live-dir ./examples/live \
+    --env dev \
+    --subenv east \
+    --region us-east-1
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == *"Account identity confirmed: 111111111111"* ]]
+}
+
+@test "SKIP_ACCOUNT_CHECK prints the skip line" {
+  export SKIP_ACCOUNT_CHECK=true
+  export SKIP_PREFLIGHT=true
+  export FAKE_TG_SCENARIO=hosts_ok
+  run ./scripts/orchestrate.sh init \
+    --live-dir ./examples/live \
+    --env dev \
+    --subenv east \
+    --region us-east-1
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == *"Skipping account identity check (SKIP_ACCOUNT_CHECK=true)."* ]]
 }

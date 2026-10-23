@@ -2,6 +2,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/lib/run.sh
+source "${SCRIPT_DIR}/lib/run.sh"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 TG_DOWNLOAD_DIR="${TG_DOWNLOAD_DIR:-${REPO_ROOT}/.cache/terragrunt}"
 
@@ -214,26 +216,30 @@ ensure_target_account_identity() {
   fi
 
   if ! command -v aws >/dev/null 2>&1; then
-    echo "Warning: aws CLI not found; skipping account identity check."
-    return 0
+    echo "Error: Missing required command: aws" >&2
+    exit 1
   fi
 
   local account_hcl="${live_dir}/${env_name}/account.hcl"
   if [[ ! -f "$account_hcl" ]]; then
-    return 0
+    echo "Error: account.hcl not found: ${account_hcl}" >&2
+    exit 1
   fi
 
   local expected_account
-  expected_account="$(sed -nE 's/^[[:space:]]*account_id[[:space:]]*=[[:space:]]*"([0-9]{12})".*/\1/p' "$account_hcl" | head -n1)"
+  expected_account="$(sed -nE '/^[[:space:]]*account_id[[:space:]]*=[[:space:]]*"[0-9]{12}"/ {
+    s/^[[:space:]]*account_id[[:space:]]*=[[:space:]]*"([0-9]{12})".*/\1/
+    p
+    q
+  }' "$account_hcl")"
   if [[ -z "$expected_account" ]]; then
-    return 0
+    echo "Error: could not parse a 12-digit account_id from ${account_hcl}" >&2
+    exit 1
   fi
 
   local actual_account
-  if ! actual_account="$(aws sts get-caller-identity --query Account --output text 2>/dev/null)"; then
-    echo "Warning: unable to determine current AWS account from STS; skipping account identity check."
-    return 0
-  fi
+  capture_stdout actual_account aws sts get-caller-identity --query Account --output text
+  actual_account="$(printf '%s' "$actual_account" | tr -d '\n\r')"
 
   if [[ "$actual_account" != "$expected_account" ]]; then
     cat >&2 <<EOF
@@ -245,6 +251,8 @@ Export credentials/profile for account ${expected_account}, or set SKIP_ACCOUNT_
 EOF
     exit 1
   fi
+
+  echo "Account identity confirmed: ${actual_account}"
 }
 
 run_preflight() {
