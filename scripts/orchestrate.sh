@@ -425,8 +425,6 @@ run_ansible() {
   local host_count
   local ssm_transfer_bucket
 
-  ensure_ansible_collections
-  require_cmd ansible-playbook
   require_cmd jq
 
   run_logged "${SCRIPT_DIR}/render_inventory.sh" \
@@ -443,6 +441,9 @@ run_ansible() {
     printf '    Fix: ensure Terraform apply created instances and terragrunt output '\''hosts'\'' is non-empty for %s\n' "$jump_hosts_dir" >&2
     exit 1
   fi
+
+  ensure_ansible_collections
+  require_cmd ansible-playbook
 
   ssm_transfer_bucket="$(resolve_ssm_transfer_bucket)"
   check_ssm_transfer_bucket_access "$ssm_transfer_bucket"

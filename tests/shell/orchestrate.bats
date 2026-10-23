@@ -27,8 +27,21 @@ EOF
   chmod +x "$FAKE_BIN/aws"
   export PATH="${FAKE_BIN}:${PATH}"
   local repo_root="${REPO_ROOT:-$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)}"
-  mkdir -p "${repo_root}/ansible/collections/ansible_collections/amazon/aws/plugins/connection"
-  touch "${repo_root}/ansible/collections/ansible_collections/amazon/aws/plugins/connection/aws_ssm.py"
+  local ssm_plugin_path="${repo_root}/ansible/collections/ansible_collections/amazon/aws/plugins/connection/aws_ssm.py"
+  if [[ -f "$ssm_plugin_path" ]]; then
+    return 0
+  fi
+  AWS_STUB_SSM_PLUGIN_PATH="$ssm_plugin_path"
+  AWS_STUB_CREATED_DIRS_FILE="$(mktemp)"
+  local plugin_dir parent_dir
+  plugin_dir="$(dirname "$ssm_plugin_path")"
+  parent_dir="$plugin_dir"
+  while [[ ! -d "$parent_dir" ]]; do
+    echo "$parent_dir" >>"$AWS_STUB_CREATED_DIRS_FILE"
+    parent_dir="$(dirname "$parent_dir")"
+  done
+  mkdir -p "$plugin_dir"
+  touch "$ssm_plugin_path"
 }
 
 teardown() {
@@ -38,6 +51,16 @@ teardown() {
   if [[ -n "${FAKE_BIN:-}" ]]; then
     rm -rf "$FAKE_BIN"
     unset FAKE_BIN || true
+  fi
+  if [[ -n "${AWS_STUB_SSM_PLUGIN_PATH:-}" ]]; then
+    rm -f "$AWS_STUB_SSM_PLUGIN_PATH"
+    if [[ -f "${AWS_STUB_CREATED_DIRS_FILE:-}" ]]; then
+      while IFS= read -r dir; do
+        rmdir "$dir" 2>/dev/null || true
+      done <"$AWS_STUB_CREATED_DIRS_FILE"
+      rm -f "$AWS_STUB_CREATED_DIRS_FILE"
+    fi
+    unset AWS_STUB_SSM_PLUGIN_PATH AWS_STUB_CREATED_DIRS_FILE || true
   fi
 }
 
@@ -612,9 +635,11 @@ assert "apply" in text, text
   export FAKE_TG_SCENARIO=hosts_empty
   local command_name
   for command_name in plan apply configure; do
-    local log
+    local log ansible_log
     log="$(mktemp)"
+    ansible_log="$(mktemp)"
     export FAKE_TG_LOG="$log"
+    export FAKE_ANSIBLE_LOG="$ansible_log"
     if [[ "$command_name" == "plan" ]]; then
       run ./scripts/orchestrate.sh "$command_name" \
         --live-dir ./examples/live \
@@ -631,7 +656,8 @@ assert "apply" in text, text
     fi
     [[ "$status" -eq 1 ]]
     [[ "$output" == *"0 jump hosts"* ]]
-    rm -f "$log"
+    [[ ! -s "$ansible_log" ]]
+    rm -f "$log" "$ansible_log"
   done
 }
 
@@ -639,11 +665,13 @@ assert "apply" in text, text
   export SKIP_ACCOUNT_CHECK=true
   export SKIP_PREFLIGHT=true
   export FAKE_TG_SCENARIO=hosts_empty
-  local log users
+  local log ansible_log users
   log="$(mktemp)"
+  ansible_log="$(mktemp)"
   users="$(mktemp)"
   printf 'users: []\n' >"$users"
   export FAKE_TG_LOG="$log"
+  export FAKE_ANSIBLE_LOG="$ansible_log"
   run ./scripts/orchestrate.sh destroy \
     --live-dir ./examples/live \
     --env dev \
@@ -654,5 +682,6 @@ assert "apply" in text, text
   [[ "$status" -eq 0 ]]
   [[ "$output" == *"inventory has 0 jump hosts; skipping decommission."* ]]
   grep -q 'destroy -auto-approve' "$log"
-  rm -f "$log" "$users"
+  [[ ! -s "$ansible_log" ]]
+  rm -f "$log" "$ansible_log" "$users"
 }
