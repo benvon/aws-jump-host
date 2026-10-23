@@ -43,13 +43,13 @@ Central IAM policies can require principals to match host `AccessProfile` and re
 
 ## Session Manager Preconditions
 
-Before `plan`/`apply`, preflight validates:
+Before `plan`, `apply`, and `configure`, preflight validates:
 
 - Session preferences document `SSM-SessionManagerRunShell` exists
 - `inputs.runAsEnabled=true`
 - `inputs.cloudWatchLogGroupName` matches expected log group path
 
-With `--ssm-self-management`, orchestrator applies the `ssm-self-management` stack before preflight so these settings are managed in-account and separately state-scoped.
+With `--ssm-self-management` on `apply`, the orchestrator applies the `ssm-self-management` stack after observability and before preflight so these settings are managed in-account and separately state-scoped. On `plan` the flag only plans that stack.
 
 ## Example IAM Policy Artifacts
 

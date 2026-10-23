@@ -79,10 +79,10 @@ Omit `extra_tags` in a file if you do not need that layer.
 From this repository root:
 
 1. `./scripts/orchestrate.sh init --live-dir <external-live-dir> --env <env> --subenv <subenv> --region <region> --users-vars <users-file>`
-2. `./scripts/orchestrate.sh plan --live-dir ...`
-3. `./scripts/orchestrate.sh apply --live-dir ...` (Terraform prompts for confirmation on each stack unless you pass `--auto-approve`)
+2. `./scripts/orchestrate.sh apply --live-dir ...` for a new account. `apply`, `configure`, and `destroy` prompt on a terminal. CD passes `--non-interactive`. `--auto-approve` is an equivalent approval flag.
+3. `./scripts/orchestrate.sh plan --live-dir ...` after that apply, for a read-only check.
 
-If Session Manager preferences are not centrally managed yet, append `--ssm-self-management` to `init|plan|apply|configure|check` so preflight can apply the optional `ssm-self-management` stack before validation.
+`--ssm-self-management` is valid on `init`, `plan`, and `apply`. On `apply` it creates the Session Manager preferences after observability and before preflight. On `plan` it only adds a read-only plan of that stack. `validate`, `configure`, and `destroy` reject the flag. `check` is retired; use `validate` for an offline check and `plan` for a read-only live run.
 
 When enabled, `ssm-self-management` configures both:
 

@@ -48,8 +48,8 @@ The resulting platform provisions private jump hosts reachable through AWS Sessi
 
 ### Shell orchestration
 
-- `scripts/orchestrate.sh` orchestrates `init|plan|apply|configure|check|destroy`.
-- Optional `--ssm-self-management` applies `<region>/ssm-self-management` before preflight to self-manage Session Manager preferences.
+- `scripts/orchestrate.sh` orchestrates `validate|init|plan|apply|configure|destroy`. `check` is retired.
+- Optional `--ssm-self-management` on `apply` applies `<region>/ssm-self-management` after observability and before preflight. On `plan` the flag only plans that stack.
 - `scripts/preflight_ssm_compliance.sh` validates required external Session Manager preferences.
 - `scripts/render_inventory.sh` renders static inventory from Terragrunt outputs for Ansible over SSM.
 
