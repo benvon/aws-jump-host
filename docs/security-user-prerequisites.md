@@ -107,7 +107,7 @@ scripts/preflight_ssm_compliance.sh --region <region> --expected-log-group <name
 To self-manage these settings in-account, use:
 
 ```bash
-scripts/orchestrate.sh <init|plan|apply|configure|check> ... --ssm-self-management
+scripts/orchestrate.sh <init|apply> ... --ssm-self-management
 ```
 
 ## Security Team Validation Checklist

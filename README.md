@@ -49,6 +49,8 @@ Run `plan` from the repository root (paths to scripts and generated inventory ar
   --users-vars ./ansible/vars-schema.example.yml
 ```
 
-`apply` and `destroy` run Terraform interactively by default. Add `--auto-approve` for non-interactive use, or use `make apply-example-auto` / `make destroy-example-auto`.
+plan and configure require an already-applied observability stack, compliant Session Manager preferences, the expected CloudWatch log group, and existing log-transfer outputs. A new account uses apply first. Use apply --ssm-self-management when this account must create the Session Manager preferences. --ssm-self-management on plan only adds a read-only plan of that stack.
 
-If your organization does not centrally manage Session Manager preferences yet, add `--ssm-self-management` to have preflight apply the optional `ssm-self-management` stack before validation.
+`apply`, `configure`, and `destroy` prompt on a terminal by default. CD passes `--non-interactive`. You can also use `make apply-example-auto` / `make destroy-example-auto` for the bundled examples.
+
+`make validate` runs `./scripts/orchestrate.sh validate`.

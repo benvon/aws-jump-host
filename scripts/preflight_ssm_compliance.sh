@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/lib/run.sh
+source "${SCRIPT_DIR}/lib/run.sh"
+
 usage() {
   cat <<USAGE
 Usage: $0 --region <aws-region> --expected-log-group <name> [--document-name <name>]
@@ -59,25 +63,14 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
-session_doc_content() {
-  aws ssm get-document \
-    --region "$region" \
-    --name "$document_name" \
-    --query 'Content' \
-    --output text
-}
-
-default_host_management_role_setting() {
-  aws ssm get-service-setting \
-    --region "$region" \
-    --setting-id "/ssm/managed-instance/default-ec2-instance-management-role" \
-    --query 'ServiceSetting.SettingValue' \
-    --output text
-}
-
 echo "Checking SSM Session Manager preferences in region: $region"
 
-if ! document_content="$(session_doc_content 2>/dev/null)"; then
+document_content=""
+if ! capture_stdout_status document_content aws ssm get-document \
+  --region "$region" \
+  --name "$document_name" \
+  --query 'Content' \
+  --output text; then
   echo "Non-compliant: Session Manager preferences document '${document_name}' not found (create/update it or run with --ssm-self-management)" >&2
   exit 1
 fi
@@ -117,7 +110,12 @@ if [[ "$cloudwatch_log_group" != "$expected_log_group" ]]; then
   exit 1
 fi
 
-if ! default_host_role_setting="$(default_host_management_role_setting 2>/dev/null)"; then
+default_host_role_setting=""
+if ! capture_stdout_status default_host_role_setting aws ssm get-service-setting \
+  --region "$region" \
+  --setting-id "/ssm/managed-instance/default-ec2-instance-management-role" \
+  --query 'ServiceSetting.SettingValue' \
+  --output text; then
   echo "Non-compliant: could not read SSM service setting '/ssm/managed-instance/default-ec2-instance-management-role'" >&2
   exit 1
 fi
@@ -128,22 +126,30 @@ if [[ -z "$default_host_role_setting" || "$default_host_role_setting" == "None" 
 fi
 
 # SSM can reference a log group name that does not exist yet; ensure the group is present in CloudWatch.
-log_group_match_count="$(aws logs describe-log-groups \
+log_group_match_count=""
+if ! capture_stdout_status log_group_match_count aws logs describe-log-groups \
   --region "$region" \
   --log-group-name-prefix "$expected_log_group" \
   --query "length(logGroups[?logGroupName=='${expected_log_group}'])" \
-  --output text)"
+  --output text; then
+  echo "Non-compliant: could not query CloudWatch log group '${expected_log_group}'" >&2
+  exit 1
+fi
 if [[ "${log_group_match_count:-0}" != "1" ]]; then
   echo "Non-compliant: CloudWatch log group '${expected_log_group}' not found (apply observability stack first)" >&2
   exit 1
 fi
 
 if [[ "$cloudwatch_encryption_enabled" == "true" ]]; then
-  log_group_kms_key="$(aws logs describe-log-groups \
+  log_group_kms_key=""
+  if ! capture_stdout_status log_group_kms_key aws logs describe-log-groups \
     --region "$region" \
     --log-group-name-prefix "$expected_log_group" \
     --query "logGroups[?logGroupName=='${expected_log_group}'].kmsKeyId | [0]" \
-    --output text)"
+    --output text; then
+    echo "Non-compliant: could not query CloudWatch log group '${expected_log_group}'" >&2
+    exit 1
+  fi
   if [[ -z "$log_group_kms_key" || "$log_group_kms_key" == "None" ]]; then
     echo "Non-compliant: Session preferences require CloudWatch encryption, but log group '${expected_log_group}' has no kmsKeyId." >&2
     exit 1

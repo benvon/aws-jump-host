@@ -19,7 +19,7 @@ help:
 	@echo "  fmt           - Apply formatting for terraform and terragrunt files"
 	@echo "  fmt-check     - Check formatting for terraform and terragrunt files"
 	@echo "  lint          - Run static linters and policy checks"
-	@echo "  validate      - Run terraform, terragrunt, and ansible validation"
+	@echo "  validate      - Run scripts/orchestrate.sh validate (offline terraform, terragrunt, ansible)"
 	@echo "  check         - Run fmt-check + lint + validate (+ optional preflight)"
 	@echo "  ci-validate-local - Run the same steps as .github/workflows/validate.yml"
 	@echo "  ci-check-local    - Run the same steps as .github/workflows/check.yml"
@@ -71,20 +71,10 @@ lint: install-tools
 	checkov -d modules/terraform
 	ansible-lint $(ANSIBLE_LINT_PATHS)
 	yamllint $(YAMLLINT_PATHS)
-	shellcheck scripts/*.sh
+	shellcheck scripts/*.sh scripts/lib/*.sh
 
 validate: install-tools
-	@for module in modules/terraform/*; do \
-		echo "terraform validate $$module"; \
-		terraform -chdir="$$module" init -backend=false -input=false -no-color > /dev/null; \
-		terraform -chdir="$$module" validate; \
-	done
-	@for stack in $$(find examples/live -type d -name .terragrunt-cache -prune -o -type d -name .terraform -prune -o -type f -name terragrunt.hcl -exec dirname {} \; | sort); do \
-		echo "terragrunt hcl validate --inputs --working-dir $$stack"; \
-		TG_DOWNLOAD_DIR="$(TG_DOWNLOAD_DIR)" terragrunt hcl validate --inputs --working-dir "$$stack"; \
-	done
-	ansible-playbook -i ansible/inventory/hosts.yml ansible/playbooks/jump_hosts.yml --syntax-check
-	ansible-playbook -i ansible/inventory/hosts.yml ansible/playbooks/decommission.yml --syntax-check
+	TG_DOWNLOAD_DIR="$(TG_DOWNLOAD_DIR)" ./scripts/orchestrate.sh validate
 
 check: install-tools fmt-check lint validate
 	@if [[ "$${SKIP_PREFLIGHT:-false}" == "true" ]]; then \
@@ -120,6 +110,7 @@ contract-test:
 	./tests/contracts/check_log_transfer.sh
 	./tests/contracts/check_tool_pins.sh
 	./tests/contracts/check_deprecated_vars.sh
+	./tests/contracts/check_orchestration_limitation.sh
 
 ansible-test: install-tools
 	@mkdir -p .ansible/tmp .ansible/home

@@ -2,19 +2,23 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/lib/run.sh
+source "${SCRIPT_DIR}/lib/run.sh"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 TG_DOWNLOAD_DIR="${TG_DOWNLOAD_DIR:-${REPO_ROOT}/.cache/terragrunt}"
 
 usage() {
   cat <<USAGE
 Usage:
-  $0 <init|plan|apply|configure|check|destroy> --live-dir <path> --env <env> --subenv <subenv> --region <region> [--users-vars <path>] [--auto-approve] [--ssm-self-management]
+  $0 validate
+  $0 <init|plan|apply|configure|destroy> --live-dir <path> --env <env> --subenv <subenv> --region <region> [--users-vars <path>] [--non-interactive|--auto-approve] [--ssm-self-management]
 
-  apply and destroy run Terraform interactively by default (no -auto-approve). Pass --auto-approve for
-  non-interactive runs (CI/automation).
+  validate runs offline checks and does not take a live target (--live-dir, --env, --subenv, --region).
 
-  --ssm-self-management applies the optional ssm-self-management stack before preflight checks to
-  manage required Session Manager preferences in-account.
+  apply, configure, and destroy prompt on a terminal by default (no -auto-approve). Pass --auto-approve or
+  --non-interactive for non-interactive runs (CI/automation).
+
+  plan and configure require an already-applied observability stack, compliant Session Manager preferences, the expected CloudWatch log group, and existing log-transfer outputs. A new account uses apply first. Use apply --ssm-self-management when this account must create the Session Manager preferences. --ssm-self-management on plan only adds a read-only plan of that stack.
 
 Examples:
   $0 init --live-dir ./examples/live --env dev --subenv east --region us-east-1 --users-vars ./ansible/vars-schema.example.yml
@@ -64,24 +68,25 @@ run_tg() {
   local stack_dir="$1"
   shift
   log_tg_action "$stack_dir" "$@"
-  TG_DOWNLOAD_DIR="$TG_DOWNLOAD_DIR" TG_BACKEND_BOOTSTRAP=true terragrunt --working-dir "$stack_dir" "$@"
+  TG_DOWNLOAD_DIR="$TG_DOWNLOAD_DIR" TG_BACKEND_BOOTSTRAP=true \
+    run_logged terragrunt --working-dir "$stack_dir" "$@"
 }
 
 run_tg_apply() {
   local stack_dir="$1"
-  if [[ "$auto_approve" == "true" ]]; then
-    run_tg "$stack_dir" apply -auto-approve
+  if [[ "$noninteractive" == "true" ]]; then
+    run_tg "$stack_dir" apply -auto-approve -input=false
   else
-    run_tg "$stack_dir" apply
+    run_tg "$stack_dir" apply -input=false
   fi
 }
 
 run_tg_destroy() {
   local stack_dir="$1"
-  if [[ "$auto_approve" == "true" ]]; then
-    run_tg "$stack_dir" destroy -auto-approve
+  if [[ "$noninteractive" == "true" ]]; then
+    run_tg "$stack_dir" destroy -auto-approve -input=false
   else
-    run_tg "$stack_dir" destroy
+    run_tg "$stack_dir" destroy -input=false
   fi
 }
 
@@ -89,14 +94,6 @@ log_ansible_action() {
   local playbook="$1"
   local bucket="$2"
   printf "\n==> [ansible/%s] inventory=%s bucket=%s region=%s\n" "$playbook" "$inventory_path" "$bucket" "$aws_region"
-}
-
-run_tg_apply_preflight() {
-  local stack_dir="$1"
-  # Preflight self-management remediation should be non-interactive so plan/check/configure
-  # can run end-to-end without extra prompts.
-  run_tg "$stack_dir" init -reconfigure
-  TG_DOWNLOAD_DIR="$TG_DOWNLOAD_DIR" TG_BACKEND_BOOTSTRAP=true TG_NO_AUTO_INIT=true terragrunt --working-dir "$stack_dir" apply -auto-approve
 }
 
 if [[ $# -lt 1 ]]; then
@@ -112,7 +109,7 @@ env_name=""
 subenv_name=""
 aws_region=""
 users_vars=""
-auto_approve="false"
+noninteractive="false"
 ssm_self_management="false"
 
 while [[ $# -gt 0 ]]; do
@@ -137,8 +134,8 @@ while [[ $# -gt 0 ]]; do
       users_vars="$2"
       shift 2
       ;;
-    --auto-approve)
-      auto_approve="true"
+    --auto-approve|--non-interactive)
+      noninteractive="true"
       shift
       ;;
     --ssm-self-management)
@@ -157,31 +154,54 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$live_dir" || -z "$env_name" || -z "$subenv_name" || -z "$aws_region" ]]; then
-  usage
+if [[ "$command_name" == "check" ]]; then
+  cat >&2 <<EOF
+Error: 'check' no longer runs from orchestrate.sh.
+Offline CI: $0 validate
+Read-only live CI: $0 plan --live-dir <path> --env <env> --subenv <subenv> --region <region>
+Formatting and lint: make fmt-check && make lint
+EOF
   exit 1
 fi
 
-region_dir="$live_dir/$env_name/$subenv_name/$aws_region"
-observability_dir="$region_dir/observability"
-endpoints_dir="$region_dir/vpc-endpoints"
-jump_hosts_dir="$region_dir/jump-hosts"
-log_transfer_dir="$region_dir/log-transfer"
-ssm_self_management_dir="$region_dir/ssm-self-management"
-inventory_path="${REPO_ROOT}/ansible/inventory/generated-${env_name}-${subenv_name}-${aws_region}.yml"
-expected_log_group="/aws/ssm/jump-host/${env_name}/${subenv_name}/${aws_region}"
-
-required_dirs=("$region_dir" "$observability_dir" "$endpoints_dir" "$jump_hosts_dir" "$log_transfer_dir")
-if [[ "$ssm_self_management" == "true" ]]; then
-  required_dirs+=("$ssm_self_management_dir")
-fi
-
-for dir in "${required_dirs[@]}"; do
-  if [[ ! -d "$dir" ]]; then
-    echo "Required directory not found: $dir" >&2
+if [[ "$command_name" != "validate" ]]; then
+  if [[ -z "$live_dir" || -z "$env_name" || -z "$subenv_name" || -z "$aws_region" ]]; then
+    usage
     exit 1
   fi
-done
+fi
+
+case "$command_name" in
+  validate|configure|destroy)
+    if [[ "$ssm_self_management" == "true" ]]; then
+      echo "Error: --ssm-self-management is not valid with ${command_name}. Use it with init, plan, or apply." >&2
+      exit 1
+    fi
+    ;;
+esac
+
+if [[ "$command_name" != "validate" ]]; then
+  region_dir="$live_dir/$env_name/$subenv_name/$aws_region"
+  observability_dir="$region_dir/observability"
+  endpoints_dir="$region_dir/vpc-endpoints"
+  jump_hosts_dir="$region_dir/jump-hosts"
+  log_transfer_dir="$region_dir/log-transfer"
+  ssm_self_management_dir="$region_dir/ssm-self-management"
+  inventory_path="${REPO_ROOT}/ansible/inventory/generated-${env_name}-${subenv_name}-${aws_region}.yml"
+  expected_log_group="/aws/ssm/jump-host/${env_name}/${subenv_name}/${aws_region}"
+
+  required_dirs=("$region_dir" "$observability_dir" "$endpoints_dir" "$jump_hosts_dir" "$log_transfer_dir")
+  if [[ "$ssm_self_management" == "true" ]]; then
+    required_dirs+=("$ssm_self_management_dir")
+  fi
+
+  for dir in "${required_dirs[@]}"; do
+    if [[ ! -d "$dir" ]]; then
+      echo "Required directory not found: $dir" >&2
+      exit 1
+    fi
+  done
+fi
 
 # Always mark orchestration so log-transfer Terragrunt does not independently
 # fall back to ancestor ansible/users.yaml or a leftover JUMP_HOST_USERS_VARS.
@@ -207,6 +227,54 @@ fi
 require_cmd terragrunt
 mkdir -p "$TG_DOWNLOAD_DIR"
 
+log_run_banner() {
+  printf '\n==> orchestrate %s\n' "$command_name"
+  if [[ "$command_name" == "validate" ]]; then
+    printf '    mode: offline repository validation\n'
+    printf '    non-interactive: %s\n' "$noninteractive"
+    return 0
+  fi
+  printf '    live-dir: %s\n' "$live_dir"
+  printf '    env/subenv/region: %s/%s/%s\n' "$env_name" "$subenv_name" "$aws_region"
+  if [[ -n "$users_vars" ]]; then
+    printf '    users-vars: %s\n' "$users_vars"
+  else
+    printf '    users-vars: (none)\n'
+  fi
+  printf '    non-interactive: %s\n' "$noninteractive"
+  if [[ "${SKIP_ACCOUNT_CHECK:-false}" == "true" ]]; then
+    printf '    account check: skipped (SKIP_ACCOUNT_CHECK=true)\n'
+  else
+    printf '    account check: required\n'
+  fi
+  case "$command_name" in
+    plan|apply|configure)
+      if [[ "${SKIP_PREFLIGHT:-false}" == "true" ]]; then
+        printf '    preflight: skipped (SKIP_PREFLIGHT=true)\n'
+      else
+        printf '    preflight: required\n'
+      fi
+      ;;
+    *)
+      printf '    preflight: not used\n'
+      ;;
+  esac
+}
+
+require_terminal_or_noninteractive() {
+  if [[ "$noninteractive" == "true" ]]; then
+    return 0
+  fi
+  if [[ -t 0 ]]; then
+    return 0
+  fi
+  cat >&2 <<EOF
+Error: ${command_name} would prompt for Terraform approval, and stdin is not a terminal.
+Re-run with --non-interactive for a CD pipeline.
+EOF
+  exit 1
+}
+
 ensure_target_account_identity() {
   if [[ "${SKIP_ACCOUNT_CHECK:-false}" == "true" ]]; then
     echo "Skipping account identity check (SKIP_ACCOUNT_CHECK=true)."
@@ -214,26 +282,30 @@ ensure_target_account_identity() {
   fi
 
   if ! command -v aws >/dev/null 2>&1; then
-    echo "Warning: aws CLI not found; skipping account identity check."
-    return 0
+    echo "Error: Missing required command: aws" >&2
+    exit 1
   fi
 
   local account_hcl="${live_dir}/${env_name}/account.hcl"
   if [[ ! -f "$account_hcl" ]]; then
-    return 0
+    echo "Error: account.hcl not found: ${account_hcl}" >&2
+    exit 1
   fi
 
   local expected_account
-  expected_account="$(sed -nE 's/^[[:space:]]*account_id[[:space:]]*=[[:space:]]*"([0-9]{12})".*/\1/p' "$account_hcl" | head -n1)"
+  expected_account="$(sed -nE '/^[[:space:]]*account_id[[:space:]]*=[[:space:]]*"[0-9]{12}"/ {
+    s/^[[:space:]]*account_id[[:space:]]*=[[:space:]]*"([0-9]{12})".*/\1/
+    p
+    q
+  }' "$account_hcl")"
   if [[ -z "$expected_account" ]]; then
-    return 0
+    echo "Error: could not parse a 12-digit account_id from ${account_hcl}" >&2
+    exit 1
   fi
 
   local actual_account
-  if ! actual_account="$(aws sts get-caller-identity --query Account --output text 2>/dev/null)"; then
-    echo "Warning: unable to determine current AWS account from STS; skipping account identity check."
-    return 0
-  fi
+  capture_stdout actual_account aws sts get-caller-identity --query Account --output text
+  actual_account="$(printf '%s' "$actual_account" | tr -d '\n\r')"
 
   if [[ "$actual_account" != "$expected_account" ]]; then
     cat >&2 <<EOF
@@ -245,6 +317,8 @@ Export credentials/profile for account ${expected_account}, or set SKIP_ACCOUNT_
 EOF
     exit 1
   fi
+
+  echo "Account identity confirmed: ${actual_account}"
 }
 
 run_preflight() {
@@ -254,19 +328,21 @@ run_preflight() {
   fi
 
   case "$command_name" in
-    plan|apply|configure)
-      echo "Applying observability stack before preflight."
-      run_tg_apply_preflight "$observability_dir"
+    plan|configure)
+      echo "SSM preflight is read-only. ${command_name} does not create the CloudWatch log group or Session Manager preferences."
+      ;;
+    apply)
+      if [[ "$ssm_self_management" == "true" ]]; then
+        echo "SSM preflight is read-only. Applied stacks: observability, ssm-self-management. Endpoints, jump hosts, log-transfer, and Ansible run only after this check passes."
+      else
+        echo "SSM preflight is read-only. Applied stacks: observability. Endpoints, jump hosts, log-transfer, and Ansible run only after this check passes."
+      fi
       ;;
   esac
 
-  if [[ "$ssm_self_management" == "true" ]]; then
-    echo "SSM self-management enabled; applying $ssm_self_management_dir before preflight."
-    run_tg_apply_preflight "$ssm_self_management_dir"
-  fi
-
-  local cmd=("${SCRIPT_DIR}/preflight_ssm_compliance.sh" --region "$aws_region" --expected-log-group "$expected_log_group")
-  "${cmd[@]}"
+  run_logged "${SCRIPT_DIR}/preflight_ssm_compliance.sh" \
+    --region "$aws_region" \
+    --expected-log-group "$expected_log_group"
 }
 
 resolve_ssm_transfer_bucket() {
@@ -297,46 +373,41 @@ resolve_ssm_transfer_bucket() {
   echo "$bucket"
 }
 
-resolve_log_transfer_outputs() {
+load_log_transfer_outputs() {
   local bucket region
-  if ! bucket="$(terragrunt --working-dir "$log_transfer_dir" output -raw bucket_name)"; then
-    echo "Error: could not read log-transfer output bucket_name from ${log_transfer_dir}." >&2
-    return 1
-  fi
-  if ! region="$(terragrunt --working-dir "$log_transfer_dir" output -raw region)"; then
-    echo "Error: could not read log-transfer output region from ${log_transfer_dir}." >&2
-    return 1
-  fi
+  capture_stdout bucket terragrunt --working-dir "$log_transfer_dir" output -raw bucket_name
+  capture_stdout region terragrunt --working-dir "$log_transfer_dir" output -raw region
   bucket="$(printf '%s' "$bucket" | tr -d '\n\r')"
   region="$(printf '%s' "$region" | tr -d '\n\r')"
   if [[ -z "$bucket" || -z "$region" ]]; then
     echo "Error: log-transfer outputs bucket_name/region are empty in ${log_transfer_dir}." >&2
-    return 1
+    exit 1
   fi
-  # Same charset the helper interpolates into aws CLI / console URLs.
   if [[ ! "$bucket" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ]]; then
     echo "Error: log-transfer output bucket_name is not a safe S3 bucket name." >&2
-    return 1
+    exit 1
   fi
   if [[ ! "$region" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
     echo "Error: log-transfer output region is not a safe AWS region id." >&2
-    return 1
+    exit 1
   fi
-  printf '%s\t%s\n' "$bucket" "$region"
+  JUMP_HOST_LOG_TRANSFER_BUCKET="$bucket"
+  JUMP_HOST_LOG_TRANSFER_REGION="$region"
 }
 
 check_ssm_transfer_bucket_access() {
   local bucket="$1"
   if ! command -v aws >/dev/null 2>&1; then
-    echo "Warning: aws CLI not found; skipping SSM transfer bucket access check for ${bucket}."
-    return 0
+    echo "Error: Missing required command: aws" >&2
+    exit 1
   fi
 
-  if aws s3api head-bucket --bucket "$bucket" >/dev/null 2>&1; then
-    return 0
-  fi
-
-  cat >&2 <<EOF
+  local head_output head_status=0
+  capture_stdout_status head_output aws s3api head-bucket --bucket "$bucket" && head_status=0 || head_status=$?
+  # Successful head-bucket output is empty. Reference it so the capture is intentional.
+  : "$head_output"
+  if [[ "$head_status" -ne 0 ]]; then
+    cat >&2 <<EOF
 Error: unable to access SSM transfer bucket '${bucket}' with current AWS credentials.
 
 Ansible's amazon.aws.aws_ssm connection requires controller access to this bucket:
@@ -346,7 +417,8 @@ Ansible's amazon.aws.aws_ssm connection requires controller access to this bucke
 Set a different bucket with ANSIBLE_AWS_SSM_BUCKET_NAME (or account.hcl local ansible_ssm_bucket),
 or grant the current role access to this bucket.
 EOF
-  exit 1
+    exit 1
+  fi
 }
 
 ensure_ansible_collections() {
@@ -357,7 +429,7 @@ ensure_ansible_collections() {
 
   require_cmd ansible-galaxy
   echo "Installing Ansible collections from ansible/requirements.yml ..."
-  ansible-galaxy collection install \
+  run_logged ansible-galaxy collection install \
     -r "${REPO_ROOT}/ansible/requirements.yml" \
     -p "${REPO_ROOT}/ansible/collections"
 }
@@ -370,55 +442,50 @@ run_ansible() {
   local host_count
   local ssm_transfer_bucket
 
-  ensure_ansible_collections
-  require_cmd ansible-playbook
   require_cmd jq
 
-  "${SCRIPT_DIR}/render_inventory.sh" \
+  run_logged "${SCRIPT_DIR}/render_inventory.sh" \
     --terragrunt-dir "$jump_hosts_dir" \
     --output "$inventory_path"
 
   host_count="$(jq -r '.all.children.jump_hosts.hosts | length' "$inventory_path")"
   if [[ "$host_count" -eq 0 ]]; then
-    printf "\n==> [ansible/%s] WARNING: inventory has 0 jump hosts — the play is skipped (no roles or tasks run, including session_comfort).\n" "$playbook" >&2
-    printf "    Fix: ensure Terraform apply created instances and terragrunt output 'hosts' is non-empty for %s\n" "$jump_hosts_dir" >&2
+    if [[ "$command_name" == "destroy" ]]; then
+      printf '\n==> [ansible/%s] inventory has 0 jump hosts; skipping decommission.\n' "$playbook"
+      return 0
+    fi
+    printf '\n==> [ansible/%s] Error: inventory has 0 jump hosts — refusing to continue.\n' "$playbook" >&2
+    printf '    Fix: ensure Terraform apply created instances and terragrunt output '\''hosts'\'' is non-empty for %s\n' "$jump_hosts_dir" >&2
+    exit 1
   fi
-  if [[ "$host_count" -gt 0 ]]; then
-    ssm_transfer_bucket="$(resolve_ssm_transfer_bucket)"
-    check_ssm_transfer_bucket_access "$ssm_transfer_bucket"
-    log_ansible_action "$playbook" "$ssm_transfer_bucket"
 
-    "${SCRIPT_DIR}/render_inventory.sh" \
-      --terragrunt-dir "$jump_hosts_dir" \
-      --output "$inventory_path" \
-      --connection "amazon.aws.aws_ssm" \
-      --ssm-region "$aws_region" \
-      --ssm-bucket "$ssm_transfer_bucket" \
-      --s3-addressing-style "virtual"
+  ensure_ansible_collections
+  require_cmd ansible-playbook
 
-    extra+=(--extra-vars "ansible_aws_ssm_bucket_name=${ssm_transfer_bucket}")
-    # Avoid cross-region redirect edge cases in the SSM plugin's S3 transfers.
-    extra+=(--extra-vars "ansible_aws_ssm_s3_addressing_style=virtual")
-  else
-    printf "\n==> [ansible/%s] inventory=%s hosts=0 (skipping SSM bucket checks)\n" "$playbook" "$inventory_path"
-  fi
+  ssm_transfer_bucket="$(resolve_ssm_transfer_bucket)"
+  check_ssm_transfer_bucket_access "$ssm_transfer_bucket"
+  log_ansible_action "$playbook" "$ssm_transfer_bucket"
+
+  run_logged "${SCRIPT_DIR}/render_inventory.sh" \
+    --terragrunt-dir "$jump_hosts_dir" \
+    --output "$inventory_path" \
+    --connection "amazon.aws.aws_ssm" \
+    --ssm-region "$aws_region" \
+    --ssm-bucket "$ssm_transfer_bucket" \
+    --s3-addressing-style "virtual"
+
+  extra+=(--extra-vars "ansible_aws_ssm_bucket_name=${ssm_transfer_bucket}")
+  # Avoid cross-region redirect edge cases in the SSM plugin's S3 transfers.
+  extra+=(--extra-vars "ansible_aws_ssm_s3_addressing_style=virtual")
 
   if [[ -n "$users_vars" && "$omit_users_vars" != "true" ]]; then
     extra+=(--extra-vars "@$users_vars")
   fi
 
-  local log_xfer
   if [[ "$playbook" == "jump_hosts.yml" ]]; then
-    if log_xfer="$(resolve_log_transfer_outputs)"; then
-      extra+=(--extra-vars "jump_host_log_transfer_bucket=${log_xfer%%$'\t'*}")
-      extra+=(--extra-vars "jump_host_log_transfer_region=${log_xfer#*$'\t'}")
-    elif [[ "$check_mode" == "true" ]]; then
-      printf "\n==> [ansible/%s] WARNING: log-transfer outputs unavailable; leaving /etc/jump-host-log-transfer-* unchanged.\n" "$playbook" >&2
-      extra+=(--extra-vars "jump_host_log_transfer_skip=true")
-    else
-      echo "Error: could not read log-transfer Terragrunt outputs; refusing to overwrite /etc/jump-host-log-transfer-*." >&2
-      exit 1
-    fi
+    load_log_transfer_outputs
+    extra+=(--extra-vars "jump_host_log_transfer_bucket=${JUMP_HOST_LOG_TRANSFER_BUCKET}")
+    extra+=(--extra-vars "jump_host_log_transfer_region=${JUMP_HOST_LOG_TRANSFER_REGION}")
   fi
 
   if [[ -n "$env_name" ]]; then
@@ -433,81 +500,95 @@ run_ansible() {
   ANSIBLE_CONFIG="${REPO_ROOT}/ansible.cfg" \
   AWS_REGION="$aws_region" \
   OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES \
-  ansible-playbook \
+  run_logged ansible-playbook \
     -i "$inventory_path" \
     "${REPO_ROOT}/ansible/playbooks/${playbook}" \
     "${extra[@]}"
 }
 
+log_run_banner
+
 case "$command_name" in
   init)
     ensure_target_account_identity
-    run_tg "$observability_dir" init
+    run_tg "$observability_dir" init -input=false
     if [[ "$ssm_self_management" == "true" ]]; then
-      run_tg "$ssm_self_management_dir" init
+      run_tg "$ssm_self_management_dir" init -input=false
     fi
-    run_tg "$endpoints_dir" init
-    run_tg "$jump_hosts_dir" init
-    run_tg "$log_transfer_dir" init
+    run_tg "$endpoints_dir" init -input=false
+    run_tg "$jump_hosts_dir" init -input=false
+    run_tg "$log_transfer_dir" init -input=false
     ;;
 
-  check)
-    ensure_target_account_identity
+  validate)
+    echo "validate: terraform validate for modules/terraform, terragrunt hcl validate for examples/live, ansible syntax-check for both playbooks."
     require_cmd terraform
     require_cmd terragrunt
-    require_cmd ansible-lint
-    require_cmd yamllint
-    require_cmd shellcheck
-    require_cmd tflint
-    require_cmd tfsec
-    require_cmd checkov
-
-    terraform fmt -check -recursive modules examples
-    terragrunt hcl format --check --working-dir terragrunt --exclude-dir .terragrunt-cache --exclude-dir .terraform
-    terragrunt hcl format --check --working-dir examples/live --exclude-dir .terragrunt-cache --exclude-dir .terraform
-    ansible-lint ansible/playbooks ansible/roles ansible/group_vars ansible/requirements.yml ansible/vars-schema.example.yml
-    yamllint ansible/playbooks ansible/roles ansible/group_vars ansible/requirements.yml ansible/vars-schema.example.yml
-    shellcheck scripts/*.sh
-    tflint --init
-    tflint --recursive modules/terraform
-    tfsec modules/terraform
-    checkov -d modules/terraform
-
-    run_preflight
+    require_cmd ansible-playbook
+    local_module=""
+    local_stack=""
+    for local_module in "${REPO_ROOT}"/modules/terraform/*; do
+      [[ -d "$local_module" ]] || continue
+      echo "validate: terraform validate ${local_module#"${REPO_ROOT}"/}"
+      run_logged terraform -chdir="$local_module" init -backend=false -input=false -no-color
+      run_logged terraform -chdir="$local_module" validate -no-color
+    done
+    while IFS= read -r local_stack; do
+      [[ -n "$local_stack" ]] || continue
+      echo "validate: terragrunt hcl validate ${local_stack#"${REPO_ROOT}"/}"
+      TG_DOWNLOAD_DIR="$TG_DOWNLOAD_DIR" run_logged terragrunt hcl validate --inputs --working-dir "$local_stack"
+    done < <(find "${REPO_ROOT}/examples/live" \
+      -type d -name .terragrunt-cache -prune -o \
+      -type d -name .terraform -prune -o \
+      -type f -name terragrunt.hcl -exec dirname {} \; | sort)
+    run_logged ansible-playbook \
+      -i "${REPO_ROOT}/ansible/inventory/hosts.yml" \
+      "${REPO_ROOT}/ansible/playbooks/jump_hosts.yml" \
+      --syntax-check
+    run_logged ansible-playbook \
+      -i "${REPO_ROOT}/ansible/inventory/hosts.yml" \
+      "${REPO_ROOT}/ansible/playbooks/decommission.yml" \
+      --syntax-check
     ;;
 
   plan)
     ensure_target_account_identity
     run_preflight
-    run_tg "$observability_dir" plan
-    run_tg "$endpoints_dir" plan
-    run_tg "$jump_hosts_dir" plan
-    run_tg "$log_transfer_dir" plan
-
+    run_tg "$observability_dir" plan -input=false
+    if [[ "$ssm_self_management" == "true" ]]; then
+      run_tg "$ssm_self_management_dir" plan -input=false
+    fi
+    run_tg "$endpoints_dir" plan -input=false
+    run_tg "$jump_hosts_dir" plan -input=false
+    run_tg "$log_transfer_dir" plan -input=false
     run_ansible "jump_hosts.yml" "true"
     ;;
 
   apply)
     ensure_target_account_identity
-    run_preflight
+    require_terminal_or_noninteractive
     run_tg_apply "$observability_dir"
+    if [[ "$ssm_self_management" == "true" ]]; then
+      run_tg_apply "$ssm_self_management_dir"
+    fi
+    run_preflight
     run_tg_apply "$endpoints_dir"
     run_tg_apply "$jump_hosts_dir"
     run_tg_apply "$log_transfer_dir"
-
     run_ansible "jump_hosts.yml"
     ;;
 
   configure)
     ensure_target_account_identity
+    require_terminal_or_noninteractive
     run_preflight
-    # Keep downloader IAM in sync with users.yaml on the documented user add/remove path.
     run_tg_apply "$log_transfer_dir"
     run_ansible "jump_hosts.yml"
     ;;
 
   destroy)
     ensure_target_account_identity
+    require_terminal_or_noninteractive
     if [[ -n "$users_vars" ]]; then
       run_ansible "decommission.yml" "false" "true"
     else
